@@ -32,7 +32,7 @@ export function FileTree({ conversationId, onOpen }: Props) {
       try {
         const result = await api.listFiles(conversationId, target);
         if (token !== requestSeq.current) return;
-        setRoot(result.path);
+        setRoot(result.root);
         setSandbox(result.sandbox);
         setEntries(
           [...result.entries].sort((a, b) =>

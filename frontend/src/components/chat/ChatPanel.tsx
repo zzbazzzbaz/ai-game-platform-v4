@@ -61,9 +61,13 @@ function ChatSession({
 
   const stopRef = useRef(chat.stop);
   stopRef.current = chat.stop;
+  const statusRef = useRef(chat.status);
+  statusRef.current = chat.status;
   useEffect(
     () => () => {
-      void stopRef.current();
+      if (statusRef.current === 'submitted' || statusRef.current === 'streaming') {
+        void stopRef.current();
+      }
     },
     [],
   );

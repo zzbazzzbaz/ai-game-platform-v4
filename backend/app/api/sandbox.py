@@ -49,6 +49,7 @@ async def list_files(
     except (WorkspaceError, OSError) as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return {
+        "root": root,
         "path": target,
         "sandbox": handle.sandbox_id,
         "entries": [

@@ -47,6 +47,7 @@ export interface FileEntry {
 }
 
 export interface FileList {
+  root: string;
   path: string;
   sandbox: string | null;
   entries: FileEntry[];
