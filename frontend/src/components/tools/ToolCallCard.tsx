@@ -89,8 +89,8 @@ export function ToolCallCard({ part }: { part: ToolPart }) {
               <div className="font-mono text-[11px] text-mist-400">{String(input.path ?? '')}</div>
               <FileDiff
                 filename={String(input.path ?? 'file')}
-                before={String(input.old_string ?? '')}
-                after={String(input.new_string ?? '')}
+                before={String(input.old_text ?? input.old_string ?? '')}
+                after={String(input.new_text ?? input.new_string ?? '')}
               />
             </>
           ) : isRead ? (

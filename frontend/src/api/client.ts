@@ -1,4 +1,4 @@
-import type { Conversation, ConversationDetail, FileList, RunOut, User } from './types';
+import type { Conversation, ConversationDetail, FileList, User } from './types';
 
 export class ApiError extends Error {
   status: number;
@@ -14,7 +14,7 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     credentials: 'same-origin',
     ...init,
     headers: {
-      ...(init?.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
+      'Content-Type': 'application/json',
       ...init?.headers,
     },
   });
@@ -61,7 +61,6 @@ export const api = {
   cancelRun: (id: string) =>
     apiFetch<{ run_id: string }>(`/api/conversations/${id}/cancel`, { method: 'POST' }),
 
-  getRun: (id: string) => apiFetch<RunOut>(`/api/runs/${id}`),
 
   listFiles: (conversationId: string, path?: string) =>
     apiFetch<FileList>(
@@ -85,12 +84,4 @@ export const api = {
       method: 'POST',
     }),
 
-  uploadFile: (conversationId: string, file: File) => {
-    const form = new FormData();
-    form.append('file', file);
-    return apiFetch<{ path: string; size: number }>(`/api/conversations/${conversationId}/files`, {
-      method: 'POST',
-      body: form,
-    });
-  },
 };

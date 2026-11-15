@@ -32,9 +32,3 @@ async def current_user(request: Request, session: AsyncSession = Depends(get_ses
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已过期")
     return row[1]
 
-
-async def optional_user(request: Request, session: AsyncSession = Depends(get_session)) -> User | None:
-    try:
-        return await current_user(request, session)
-    except HTTPException:
-        return None

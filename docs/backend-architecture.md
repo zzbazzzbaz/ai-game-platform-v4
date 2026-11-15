@@ -83,7 +83,7 @@ pydantic-ai学习/
 | --- | --- | --- |
 | 接入层 | `app/api/` | HTTP 路由、SSE、请求参数校验 |
 | 认证 | `app/auth/` | 登录、会话 Cookie、当前用户解析 |
-| 运行时 | `app/runtime/` | 运行锁、运行记录、沙箱登记、审批记录、空闲回收 |
+| 运行时 | `app/runtime/` | 运行锁、运行记录、沙箱登记、空闲回收 |
 | Agent | `app/agent/` | 模型、指令、依赖、capability 组装 |
 | 存储 | `app/store/` | `ConversationStore` 的 Postgres 实现 |
 | 表映射 | `app/models.py` | SQLAlchemy 模型 |
@@ -127,11 +127,11 @@ sequenceDiagram
 
 1. `POST /api/chat` 的请求体包含 `id`（conversation_id）和本轮 `messages`。
 2. `current_user` 从会话 Cookie 解析当前用户。
-3. `ChatService` 校验该 conversation 的 `user_id` 与当前用户一致。
+3. `owned_conversation` 校验该 conversation 的 `user_id` 与当前用户一致。
 4. `RunManager` 以 `conversation_id` 获取 Postgres advisory lock，并写入一条 `runs` 记录，状态为 `running`。
 5. `SandboxRegistry.ensure` 查找该 conversation 的 `active` 沙箱；存在则复用，不存在则创建并写入 `sandbox_sessions`。
 6. `AgentFactory.build` 使用当前 conversation 的依赖构建 Agent。模型实例在应用启动时创建，由所有 run 复用。
-7. `VercelAIAdapter.dispatch_request` 以 `conversation_store` 加载历史、执行 Agent、编码 SSE，并在结束后保存历史。
+7. `VercelAIAdapter.from_request` 解析请求，`run_stream` 以 `conversation_store` 加载历史、执行 Agent，`streaming_response` 编码 SSE，并在结束后保存历史。
 8. `on_complete` 更新 `runs` 的状态、用量和结束时间，并更新 `sandbox_sessions.last_used_at`。
 9. run 以 `DeferredToolRequests` 结束时，`runs.status` 置为 `waiting_approval`，待处理请求保存在 `conversations.deferred_tool_requests`。
 10. 取消时，`runs.status` 置为 `cancelled`，`RunCancelled` 携带的消息写回 `ConversationStore`。
@@ -141,7 +141,10 @@ sequenceDiagram
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `POST` | `/api/auth/login` | 登录并写入会话 Cookie |
+| `POST` | `/api/auth/register` | 注册并写入会话 Cookie |
+| `POST` | `/api/auth/demo` | 演示账号一键登录 |
 | `POST` | `/api/auth/logout` | 退出登录 |
+| `GET` | `/api/health` | 健康检查 |
 | `GET` | `/api/me` | 当前用户 |
 | `GET` | `/api/conversations` | 会话列表 |
 | `POST` | `/api/conversations` | 新建会话 |
@@ -164,7 +167,7 @@ sequenceDiagram
 | `ConversationWorkspace` | 从 `AgentDeps.sandbox_ref` 解析工作区；沙箱由 `SandboxRegistry` 在 run 前创建并登记 |
 | `Coder` | 文件读写、编辑、列目录、grep、shell、子任务委派、上下文清理与工具结果截断 |
 | `Permissions` | 依据 `AgentDeps.approval_mode` 生成审批请求 |
-| `Planning` | 计划工具；使用默认内存存储 |
+| `Planning` | 计划工具；按 conversation 使用进程内存储 |
 
 `AgentDeps` 字段：
 
@@ -172,7 +175,7 @@ sequenceDiagram
 | --- | --- | --- |
 | `user_id` | `UUID` | 当前用户 |
 | `conversation_id` | `str` | 当前会话 |
-| `sandbox_ref` | `WorkspaceRef \| None` | 当前会话的沙箱引用 |
+| `sandbox_ref` | `WorkspaceRef` | 当前会话的沙箱引用 |
 | `approval_mode` | `Literal['full', 'auto', 'read-only']` | 审批模式 |
 
 组装代码位于 `app/agent/factory.py`：
@@ -190,7 +193,7 @@ agent = Agent(
 )
 ```
 
-`Planning` 使用默认内存存储，计划只存在于当前 run 的工具结果中，不落库。
+`Planning` 按 conversation 使用进程内存储，计划不落库，进程重启后清空。
 
 `Coder` 自带的能力集合：
 
@@ -201,7 +204,6 @@ agent = Agent(
 | `RepoContext` | 读取工作区中的 `AGENTS.md` / `CLAUDE.md` |
 | `SubAgents` | `delegate_task`，把子任务交给同一 Agent 的新 run |
 | `ClearToolResults` | 清理旧工具结果 |
-| `WarnNearLimits` | 接近上下文上限时提示 |
 | `ToolOutputLimits` | 截断超长工具结果 |
 | `RepairToolArguments` | 修复格式错误的工具参数 |
 | `Caching` | 提示词缓存 |
@@ -227,16 +229,16 @@ agent = Agent(
 | `provider` | 固定为 `e2b` |
 | `sandbox_id` | 阿里云沙箱 ID |
 | `template` | 创建时使用的模板 |
-| `status` | `active` / `paused` / `dead` |
+| `status` | `active` / `dead` |
 | `last_used_at` | 最近一次使用时间 |
 | `expires_at` | 过期时间 |
 
 `SandboxRegistry` 的行为：
 
 1. 查询 `sandbox_sessions` 中该 conversation 的 `active` 记录。
-2. 存在时返回 `WorkspaceRef(provider='e2b', id=sandbox_id)`。
+2. 存在时更新 `last_used_at`，返回 `WorkspaceRef(provider='e2b', id=sandbox_id)`。
 3. 不存在时通过 `e2b.E2B` 客户端创建沙箱，写入 `sandbox_sessions`，再返回引用。
-4. 运行结束更新 `last_used_at`。
+4. 运行结束或复用时更新 `last_used_at`。
 5. 沙箱不可用时把记录标记为 `dead`，下一次 run 重新创建。
 
 `e2b.E2B` 客户端的连接参数来自环境变量：
@@ -250,7 +252,7 @@ agent = Agent(
 
 `E2B_TEMPLATE` 为空时使用阿里云默认模板。默认模板包含 Python 3.13、git、Node 20，不包含 `rg`；`Coder` 在缺少 `rg` 时使用 POSIX 搜索。
 
-`reaper` 每 5 分钟扫描一次 `sandbox_sessions`，对 `last_used_at` 超过 30 分钟的 `active` 沙箱执行 `pause` 或 `kill`，并更新状态。
+`reaper` 每 5 分钟扫描一次 `sandbox_sessions`，对 `last_used_at` 超过 30 分钟且没有运行中 run 的 `active` 沙箱执行 `kill`，并标记为 `dead`。
 
 预览与文件接口：
 
@@ -282,12 +284,12 @@ agent = Agent(
 
 - `GET /api/conversations/{id}` 返回会话消息与最近一次 run 的状态。
 - `GET /api/runs/{id}` 返回 run 的状态、时间与用量。
-- 正在运行的 run 在页面刷新后显示为 `running`；前端不接管未结束的 SSE 流。
+- 页面刷新后前端不接管未结束的 SSE 流；客户端断开后 run 记为 `cancelled`，并保存已产生的消息。
 - 已结束的 run 从 `conversation_entries` 重建消息列表。
 
 ### 取消
 
-`POST /api/conversations/{id}/cancel` 查找该 conversation 的 `running` 或 `waiting_approval` run，取消对应的 asyncio Task。适配器返回 `RunCancelled`，后端将其中的消息保存到 `ConversationStore`，并把 `runs.status` 置为 `cancelled`。
+`POST /api/conversations/{id}/cancel` 对 active run 触发 `CancellationToken`，适配器返回 `RunCancelled`，后端将其中的消息保存到 `ConversationStore`，并把 `runs.status` 置为 `cancelled`。若只有 `waiting_approval` 的 run，则直接把该 run 置为 `cancelled` 并清空 `conversations.deferred_tool_requests`。
 
 ## 8. 审批
 
@@ -332,7 +334,7 @@ agent = Agent(
 
 `WorkspaceUnavailableError`：沙箱不可用。后端把 `sandbox_sessions.status` 置为 `dead`，下一次 run 重新创建沙箱。
 
-`ConversationConflict`：同一 conversation 被并发保存。后端返回 `409`，前端提示会话正在运行。
+`ConversationConflict`：同一 conversation 被并发保存。适配器把冲突转成 SSE error 事件，`runs.status` 记为 `failed`。
 
 ## 10. 配置
 
@@ -344,11 +346,17 @@ agent = Agent(
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
 | `DATABASE_URL` | `postgresql+asyncpg://agent:agent@localhost:5432/agent` |
 | `SESSION_SECRET` | 会话 Cookie 签名密钥 |
+| `SESSION_COOKIE` | 会话 Cookie 名称，默认 `agent_session` |
+| `SESSION_TTL_SECONDS` | 会话有效期，默认 30 天 |
+| `DEMO_EMAIL` | 演示账号邮箱 |
+| `DEMO_PASSWORD` | 演示账号密码 |
 | `E2B_API_KEY` | 阿里云 Agent Sandbox API Key |
 | `E2B_API_URL` | `https://api.<region>.sandbox.aliyuncs.com` |
 | `E2B_DOMAIN` | `<region>.sandbox.aliyuncs.com` |
 | `E2B_TEMPLATE` | 沙箱模板名称；为空时使用默认模板 |
 | `LOGFIRE_TOKEN` | Logfire 写入 Token，可为空 |
+| `SANDBOX_TIMEOUT` | 沙箱生命周期秒数，默认 3600 |
+| `SANDBOX_IDLE_SECONDS` | 空闲回收阈值秒数，默认 1800 |
 
 ## 11. 启动
 

@@ -9,11 +9,18 @@ export function PreviewPane({ conversationId }: { conversationId: string }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const portNumber = Number(port);
+  const validPort = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
+
   const open = async () => {
+    if (!validPort) {
+      setError('端口需在 1–65535 之间');
+      return;
+    }
     setLoading(true);
     setError(null);
     try {
-      const result = await api.preview(conversationId, Number(port));
+      const result = await api.preview(conversationId, portNumber);
       setUrl(result.url);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '获取预览地址失败');
@@ -32,7 +39,7 @@ export function PreviewPane({ conversationId }: { conversationId: string }) {
           className="w-20 rounded-md border border-ink-700 bg-ink-950 px-2 py-1 font-mono text-[11px] text-mist-200 outline-none focus:border-accent-500/60"
           placeholder="端口"
         />
-        <Button size="sm" variant="outline" onClick={() => void open()} disabled={loading || !port}>
+        <Button size="sm" variant="outline" onClick={() => void open()} disabled={loading || !validPort}>
           {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : '打开'}
         </Button>
         {url && (

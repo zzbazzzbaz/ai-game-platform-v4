@@ -76,7 +76,9 @@ export function Sidebar({
               </button>
               <button
                 type="button"
-                onClick={() => onDelete(conversation.id)}
+                onClick={() => {
+                  if (window.confirm(`删除会话「${conversation.title}」及其沙箱？`)) onDelete(conversation.id);
+                }}
                 className="rounded-md p-1 text-mist-400/50 opacity-0 transition-opacity hover:bg-ink-600 hover:text-red-300 group-hover:opacity-100"
                 title="删除会话"
               >

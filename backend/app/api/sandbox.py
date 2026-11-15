@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import mimetypes
+import posixpath
 import uuid
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic_ai.workspaces import WorkspaceError, WorkspaceUnavailableError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_registry
+from app.api.deps import get_registry, owned_conversation
 from app.auth.deps import current_user
 from app.db import get_session
-from app.models import Conversation, User
+from app.models import User
 from app.runtime.sandboxes import SandboxRegistry, SandboxUnavailable
 
 router = APIRouter(prefix="/api", tags=["sandbox"])
@@ -19,13 +21,12 @@ router = APIRouter(prefix="/api", tags=["sandbox"])
 MAX_FILE_BYTES = 2 * 1024 * 1024
 
 
-async def _owned_conversation(
-    conversation_id: uuid.UUID, user: User, session: AsyncSession
-) -> Conversation:
-    row = await session.get(Conversation, conversation_id)
-    if row is None or row.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
-    return row
+def _safe_path(root: str, path: str) -> str:
+    root_path = posixpath.normpath(root).rstrip("/")
+    candidate = posixpath.normpath(path if path.startswith("/") else posixpath.join(root_path, path))
+    if candidate != root_path and not candidate.startswith(f"{root_path}/"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="路径超出工作目录")
+    return candidate
 
 
 @router.get("/conversations/{conversation_id}/sandbox/files")
@@ -36,18 +37,19 @@ async def list_files(
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
     path: str | None = Query(default=None),
 ) -> dict[str, object]:
-    await _owned_conversation(conversation_id, user, session)
+    await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
         return {"path": path or "", "entries": [], "sandbox": None}
     backend = registry.backend(handle)
     try:
-        root = path or await backend.working_dir()
-        entries = await backend.list_dir(root)
+        root = await backend.working_dir()
+        target = _safe_path(root, path) if path else root
+        entries = await backend.list_dir(target)
     except (WorkspaceError, OSError) as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     return {
-        "path": root,
+        "path": target,
         "sandbox": handle.sandbox_id,
         "entries": [
             {"name": entry.name, "path": entry.path, "is_dir": entry.is_dir, "size": entry.size}
@@ -64,13 +66,22 @@ async def read_file(
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
     path: str = Query(...),
 ) -> Response:
-    await _owned_conversation(conversation_id, user, session)
+    await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该会话还没有沙箱")
     backend = registry.backend(handle)
     try:
-        data = await backend.read_bytes(path)
+        root = await backend.working_dir()
+        target = _safe_path(root, path)
+        entry = await backend.stat(target)
+        if entry.is_dir:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="目标是目录")
+        if entry.size is not None and entry.size > MAX_FILE_BYTES:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="文件过大")
+        data = await backend.read_bytes(target)
+    except HTTPException:
+        raise
     except (WorkspaceError, OSError) as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
     if len(data) > MAX_FILE_BYTES:
@@ -88,7 +99,7 @@ async def preview(
     session: Annotated[AsyncSession, Depends(get_session)],
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
 ) -> dict[str, str]:
-    await _owned_conversation(conversation_id, user, session)
+    await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该会话还没有沙箱")
@@ -108,7 +119,7 @@ async def upload_file(
     file: UploadFile = File(...),
     path: str | None = Form(default=None),
 ) -> dict[str, object]:
-    await _owned_conversation(conversation_id, user, session)
+    await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该会话还没有沙箱")
@@ -118,7 +129,8 @@ async def upload_file(
     backend = registry.backend(handle)
     try:
         working_dir = await backend.working_dir()
-        target = path or f"{working_dir.rstrip('/')}/{file.filename}"
+        name = Path(file.filename or "upload.bin").name
+        target = _safe_path(working_dir, path or name)
         await backend.write_bytes(target, data)
     except (WorkspaceError, OSError, WorkspaceUnavailableError) as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error

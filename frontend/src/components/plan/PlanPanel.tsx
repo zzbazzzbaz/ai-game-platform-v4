@@ -43,15 +43,23 @@ function parseJson(value: unknown): unknown {
   }
 }
 
+const REMINDER_STATUS: Record<string, string> = {
+  x: 'completed',
+  '~': 'in_progress',
+  '-': 'cancelled',
+  '!': 'blocked',
+  ' ': 'pending',
+};
+
 function parseReminder(text: string): PlanTask[] | null {
   if (!text.includes('<plan_reminder>')) return null;
   const tasks: PlanTask[] = [];
   for (const line of text.split('\n')) {
-    const match = /^\s*\d+\.\s+\[([ x~])\]\s+(.*)$/.exec(line);
+    const match = /^\s*\d+\.\s+\[([ x~\-!])\]\s+(.*)$/.exec(line);
     if (!match) continue;
     tasks.push({
       content: match[2].trim(),
-      status: match[1] === 'x' ? 'completed' : match[1] === '~' ? 'in_progress' : 'pending',
+      status: REMINDER_STATUS[match[1]] ?? 'pending',
     });
   }
   return tasks.length > 0 ? tasks : null;

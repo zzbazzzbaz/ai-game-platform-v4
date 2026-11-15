@@ -14,27 +14,27 @@ import {
 export interface ToolMeta {
   title: string;
   Icon: LucideIcon;
-  tone?: 'shell' | 'file' | 'search' | 'plan' | 'agent' | 'default';
 }
 
 const TOOL_META: Record<string, ToolMeta> = {
-  shell: { title: 'Shell', Icon: Terminal, tone: 'shell' },
-  run_command: { title: 'Run command', Icon: Terminal, tone: 'shell' },
-  start_command: { title: 'Start command', Icon: Terminal, tone: 'shell' },
-  read_file: { title: 'Read file', Icon: FileText, tone: 'file' },
-  write_file: { title: 'Write file', Icon: FilePlus, tone: 'file' },
-  edit_file: { title: 'Edit file', Icon: FilePen, tone: 'file' },
-  list_files: { title: 'List files', Icon: FolderTree, tone: 'file' },
-  create_directory: { title: 'Create directory', Icon: FolderTree, tone: 'file' },
-  grep: { title: 'Search', Icon: Search, tone: 'search' },
-  delegate_task: { title: 'Delegate task', Icon: Bot, tone: 'agent' },
-  write_plan: { title: 'Update plan', Icon: ListTodo, tone: 'plan' },
-  update_task_status: { title: 'Update plan', Icon: ListTodo, tone: 'plan' },
-  read_plan: { title: 'Read plan', Icon: ListTodo, tone: 'plan' },
+  shell: { title: 'Shell', Icon: Terminal },
+  run_command: { title: 'Run command', Icon: Terminal },
+  start_command: { title: 'Start command', Icon: Terminal },
+  read_file: { title: 'Read file', Icon: FileText },
+  write_file: { title: 'Write file', Icon: FilePlus },
+  edit_file: { title: 'Edit file', Icon: FilePen },
+  list_files: { title: 'List files', Icon: FolderTree },
+  create_directory: { title: 'Create directory', Icon: FolderTree },
+  grep: { title: 'Search', Icon: Search },
+  delegate_task: { title: 'Delegate task', Icon: Bot },
+  write_plan: { title: 'Update plan', Icon: ListTodo },
+  update_task_status: { title: 'Update plan', Icon: ListTodo },
+  update_task_statuses: { title: 'Update plan', Icon: ListTodo },
+  read_plan: { title: 'Read plan', Icon: ListTodo },
 };
 
 export function toolMeta(name: string): ToolMeta {
-  return TOOL_META[name] ?? { title: name, Icon: Wrench, tone: 'default' };
+  return TOOL_META[name] ?? { title: name, Icon: Wrench };
 }
 
 export function toolNameFromPartType(type: string): string {
@@ -65,5 +65,6 @@ export function outputText(output: unknown): string {
     if (typeof record.text === 'string') return record.text;
     if (typeof record.content === 'string') return record.content;
   }
-  return JSON.stringify(output, null, 2);
+  const text = JSON.stringify(output, null, 2);
+  return text.length > 20000 ? `${text.slice(0, 20000)}\n…（已截断）` : text;
 }

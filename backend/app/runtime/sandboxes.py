@@ -57,6 +57,7 @@ class SandboxRegistry:
                 )
             )
         if row is not None:
+            await self.touch(row.sandbox_id)
             return SandboxHandle(id=row.id, sandbox_id=row.sandbox_id, template=row.template)
 
         template = settings.e2b_template_name
@@ -139,9 +140,6 @@ class SandboxRegistry:
 
     async def kill(self, handle: SandboxHandle) -> None:
         await self._kill_quietly(handle.sandbox_id)
-
-    async def kill_by_id(self, sandbox_id: str) -> None:
-        await self._kill_quietly(sandbox_id)
 
     async def kill_checked(self, sandbox_id: str) -> None:
         """回收时使用：让调用方知道失败，保留记录下次重试。"""

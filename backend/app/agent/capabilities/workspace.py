@@ -22,16 +22,19 @@ class ConversationWorkspace(AbstractCapability[AgentDeps]):
     """`e2b.E2B` 客户端；启动时由应用注入。"""
 
     template: str | None = None
+    sandbox_timeout: int = 3600
 
     def get_workspace(
         self, ctx: RunContext[AgentDeps], *, ref: WorkspaceRef | None
     ) -> WorkspaceBackend | None:
-        del ref
         sandbox_ref = ctx.deps.sandbox_ref
         if sandbox_ref.provider != "e2b":
+            return None
+        if ref is not None and ref != sandbox_ref:
             return None
         return E2BSandboxBackend(
             client=self.client,
             ref=sandbox_ref,
             template=self.template,
+            sandbox_timeout=self.sandbox_timeout,
         )

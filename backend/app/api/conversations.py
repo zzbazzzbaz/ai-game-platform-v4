@@ -10,10 +10,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 
-from app.api.deps import get_registry, get_store
+from app.api.deps import get_registry, get_run_manager, get_store, owned_conversation
 from app.auth.deps import current_user
 from app.db import get_session
 from app.models import Conversation, Run, User
+from app.runtime.runs import RunManager
 from app.runtime.sandboxes import SandboxRegistry
 from app.store.conversations import PostgresConversationStore
 
@@ -55,15 +56,6 @@ def _conversation_out(row: Conversation) -> ConversationOut:
     )
 
 
-async def _owned_conversation(
-    conversation_id: uuid.UUID, user: User, session: AsyncSession
-) -> Conversation:
-    row = await session.get(Conversation, conversation_id)
-    if row is None or row.user_id != user.id:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
-    return row
-
-
 @router.get("/conversations", response_model=list[ConversationOut])
 async def list_conversations(
     user: Annotated[User, Depends(current_user)],
@@ -98,7 +90,7 @@ async def get_conversation(
     session: Annotated[AsyncSession, Depends(get_session)],
     store: Annotated[PostgresConversationStore, Depends(get_store)],
 ) -> dict[str, Any]:
-    row = await _owned_conversation(conversation_id, user, session)
+    row = await owned_conversation(conversation_id, user, session)
     conversation = await store.load(str(conversation_id), scope=str(user.id))
     messages = (
         VercelAIAdapter.dump_messages(conversation.messages, sdk_version=6)
@@ -132,9 +124,17 @@ async def delete_conversation(
     session: Annotated[AsyncSession, Depends(get_session)],
     store: Annotated[PostgresConversationStore, Depends(get_store)],
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
+    run_manager: Annotated[RunManager, Depends(get_run_manager)],
 ) -> None:
-    await _owned_conversation(conversation_id, user, session)
+    await owned_conversation(conversation_id, user, session)
+    if run_manager.active(conversation_id) is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="会话正在运行，无法删除")
     handle = await registry.active_handle(conversation_id)
-    await store.delete(str(conversation_id), scope=str(user.id))
     if handle is not None:
-        await registry.kill(handle)
+        try:
+            await registry.kill_checked(handle.sandbox_id)
+        except Exception as error:  # noqa: BLE001
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="沙箱销毁失败，请稍后重试"
+            ) from error
+    await store.delete(str(conversation_id), scope=str(user.id))

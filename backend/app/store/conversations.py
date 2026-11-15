@@ -151,6 +151,8 @@ class PostgresConversationStore(ConversationStore):
             params["limit"] = limit
         async with self._sessions() as session:
             rows = (await session.execute(statement, params)).all()
+        if not rows:
+            raise KeyError(head_id)
         entries = [
             ConversationEntry(
                 id=str(row.id),

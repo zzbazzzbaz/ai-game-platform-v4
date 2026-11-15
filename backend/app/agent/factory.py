@@ -16,10 +16,11 @@ from app.agent.instructions import INSTRUCTIONS
 class AgentFactory:
     """为每次 run 组装 Agent。模型实例由应用启动时创建并复用。"""
 
-    def __init__(self, model: Model, *, e2b_client: e2b.E2B | None = None, template: str | None = None) -> None:
+    def __init__(self, model: Model, *, e2b_client: e2b.E2B | None = None, template: str | None = None, sandbox_timeout: int = 3600) -> None:
         self._model = model
         self._e2b_client = e2b_client
         self._template = template
+        self._sandbox_timeout = sandbox_timeout
 
     def build(self) -> Agent[AgentDeps, str | DeferredToolRequests]:
         return Agent(
@@ -28,7 +29,11 @@ class AgentFactory:
             output_type=[str, DeferredToolRequests],
             instructions=INSTRUCTIONS,
             capabilities=[
-                ConversationWorkspace(client=self._e2b_client, template=self._template),
+                ConversationWorkspace(
+                    client=self._e2b_client,
+                    template=self._template,
+                    sandbox_timeout=self._sandbox_timeout,
+                ),
                 Coder(),
                 permissions(),
                 planning(),

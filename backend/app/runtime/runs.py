@@ -1,19 +1,20 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import TypeAdapter
 from pydantic_ai import AgentRunResult, CancellationToken
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage
-from pydantic import TypeAdapter
-from sqlalchemy import func, select, text, update
+from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
-from app.db import engine
+from app.db import lock_engine
 from app.models import Run
 
 logger = logging.getLogger(__name__)
@@ -29,11 +30,10 @@ class RunBusy(RuntimeError):
 class ActiveRun:
     id: uuid.UUID
     conversation_id: uuid.UUID
-    user_id: uuid.UUID
-    parent_run_id: uuid.UUID | None
     cancellation: CancellationToken = field(default_factory=CancellationToken)
     result: AgentRunResult[Any] | None = None
     usage: RunUsage | None = None
+    usage_baseline: RunUsage = field(default_factory=RunUsage)
     cancelled: bool = False
     finished: bool = False
     error: BaseException | None = None
@@ -42,7 +42,8 @@ class ActiveRun:
 
 
 def advisory_key(conversation_id: uuid.UUID) -> int:
-    return int.from_bytes(conversation_id.bytes[:8], "big", signed=True)
+    digest = hashlib.blake2b(conversation_id.bytes, digest_size=8).digest()
+    return int.from_bytes(digest, "big", signed=True)
 
 
 class RunManager:
@@ -52,14 +53,23 @@ class RunManager:
         self._sessions = session_factory
         self._active: dict[uuid.UUID, ActiveRun] = {}
 
+    def active(self, conversation_id: uuid.UUID) -> ActiveRun | None:
+        return self._active.get(conversation_id)
+
     async def start(
-        self, *, user_id: uuid.UUID, conversation_id: uuid.UUID, model: str
+        self,
+        *,
+        conversation_id: uuid.UUID,
+        user_id: uuid.UUID,
+        model: str,
+        resuming: bool = False,
+        usage_baseline: RunUsage | None = None,
     ) -> ActiveRun:
         if conversation_id in self._active:
             raise RunBusy(str(conversation_id))
 
         key = advisory_key(conversation_id)
-        connection = await engine.connect()
+        connection = await lock_engine.connect()
         locked = await connection.scalar(text("SELECT pg_try_advisory_lock(:key)"), {"key": key})
         if not locked:
             await connection.close()
@@ -67,15 +77,17 @@ class RunManager:
 
         try:
             async with self._sessions() as session:
-                parent_run_id = await session.scalar(
-                    select(Run.id)
-                    .where(
-                        Run.conversation_id == conversation_id,
-                        Run.status == "waiting_approval",
+                parent_run_id = None
+                if resuming:
+                    parent_run_id = await session.scalar(
+                        select(Run.id)
+                        .where(
+                            Run.conversation_id == conversation_id,
+                            Run.status == "waiting_approval",
+                        )
+                        .order_by(Run.started_at.desc())
+                        .limit(1)
                     )
-                    .order_by(Run.started_at.desc())
-                    .limit(1)
-                )
                 run = Run(
                     conversation_id=conversation_id,
                     user_id=user_id,
@@ -94,16 +106,12 @@ class RunManager:
         active = ActiveRun(
             id=run.id,
             conversation_id=conversation_id,
-            user_id=user_id,
-            parent_run_id=parent_run_id,
+            usage_baseline=usage_baseline or RunUsage(),
         )
         active._lock_connection = connection
         active._lock_key = key
         self._active[conversation_id] = active
         return active
-
-    def active(self, conversation_id: uuid.UUID) -> ActiveRun | None:
-        return self._active.get(conversation_id)
 
     async def cancel(self, conversation_id: uuid.UUID) -> uuid.UUID | None:
         active = self._active.get(conversation_id)
@@ -117,13 +125,7 @@ class RunManager:
             return
         active.finished = True
         self._active.pop(active.conversation_id, None)
-        usage: RunUsage = (
-            active.result.usage
-            if active.result is not None
-            else active.usage
-            if active.usage is not None
-            else RunUsage()
-        )
+
         if active.cancelled:
             status = "cancelled"
         elif active.result is not None and isinstance(active.result.output, DeferredToolRequests):
@@ -132,6 +134,13 @@ class RunManager:
             status = "completed"
         else:
             status = "failed"
+
+        if active.result is not None:
+            usage = active.result.usage - active.usage_baseline
+        elif active.usage is not None:
+            usage = active.usage - active.usage_baseline
+        else:
+            usage = RunUsage()
 
         error: dict[str, Any] | None = None
         if active.error is not None:
@@ -160,18 +169,3 @@ class RunManager:
                     )
                 finally:
                     await active._lock_connection.close()
-
-    async def latest_for_conversation(self, conversation_id: uuid.UUID) -> Run | None:
-        async with self._sessions() as session:
-            return await session.scalar(
-                select(Run)
-                .where(Run.conversation_id == conversation_id)
-                .order_by(Run.started_at.desc())
-                .limit(1)
-            )
-
-    async def count_running(self) -> int:
-        async with self._sessions() as session:
-            return await session.scalar(
-                select(func.count()).select_from(Run).where(Run.status == "running")
-            ) or 0

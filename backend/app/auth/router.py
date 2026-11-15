@@ -37,6 +37,27 @@ class UserOut(BaseModel):
         return cls(id=str(user.id), email=user.email)
 
 
+async def _issue_session(session: AsyncSession, user: User, response: Response) -> None:
+    token, token_hash = new_session_token()
+    session.add(
+        Session(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(UTC) + timedelta(seconds=settings.session_ttl_seconds),
+        )
+    )
+    await session.commit()
+    response.set_cookie(
+        settings.session_cookie,
+        token,
+        max_age=settings.session_ttl_seconds,
+        httponly=True,
+        samesite="lax",
+        secure=False,
+        path="/",
+    )
+
+
 @router.post("/auth/login", response_model=UserOut)
 async def login(
     body: LoginRequest,
@@ -47,25 +68,7 @@ async def login(
     if user is None or not verify_password(user.password_hash, body.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="邮箱或密码错误")
 
-    token, token_hash = new_session_token()
-    session.add(
-        Session(
-            user_id=user.id,
-            token_hash=token_hash,
-            expires_at=datetime.now(UTC) + timedelta(seconds=settings.session_ttl_seconds),
-        )
-    )
-    await session.commit()
-
-    response.set_cookie(
-        settings.session_cookie,
-        token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
-    )
+    await _issue_session(session, user, response)
     return UserOut.from_user(user)
 
 
@@ -86,24 +89,7 @@ async def register(
     await session.commit()
     await session.refresh(user)
 
-    token, token_hash = new_session_token()
-    session.add(
-        Session(
-            user_id=user.id,
-            token_hash=token_hash,
-            expires_at=datetime.now(UTC) + timedelta(seconds=settings.session_ttl_seconds),
-        )
-    )
-    await session.commit()
-    response.set_cookie(
-        settings.session_cookie,
-        token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
-    )
+    await _issue_session(session, user, response)
     return UserOut.from_user(user)
 
 
@@ -138,22 +124,5 @@ async def demo_login(response: Response, session: AsyncSession = Depends(get_ses
         await session.commit()
         await session.refresh(user)
 
-    token, token_hash = new_session_token()
-    session.add(
-        Session(
-            user_id=user.id,
-            token_hash=token_hash,
-            expires_at=datetime.now(UTC) + timedelta(seconds=settings.session_ttl_seconds),
-        )
-    )
-    await session.commit()
-    response.set_cookie(
-        settings.session_cookie,
-        token,
-        max_age=settings.session_ttl_seconds,
-        httponly=True,
-        samesite="lax",
-        secure=False,
-        path="/",
-    )
+    await _issue_session(session, user, response)
     return UserOut.from_user(user)

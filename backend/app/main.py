@@ -5,7 +5,7 @@ import logging
 import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import logfire
 from fastapi import FastAPI
@@ -45,7 +45,7 @@ async def fail_stale_runs() -> None:
     async with session_factory() as session:
         result = await session.execute(
             update(Run)
-            .where(Run.status == "running")
+            .where(Run.status == "running", Run.started_at < datetime.now(UTC) - timedelta(minutes=10))
             .values(
                 status="failed",
                 finished_at=datetime.now(UTC),
@@ -73,7 +73,10 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     registry = SandboxRegistry(e2b_client, session_factory)
     run_manager = RunManager(session_factory)
     agent_factory = AgentFactory(
-        infer_model(settings.model), e2b_client=e2b_client, template=settings.e2b_template_name
+        infer_model(settings.model),
+        e2b_client=e2b_client,
+        template=settings.e2b_template_name,
+        sandbox_timeout=settings.sandbox_timeout,
     )
 
     app.state.store = store

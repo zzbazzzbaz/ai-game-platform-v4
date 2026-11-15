@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { UIMessage } from 'ai';
 import { Bot, Sparkles } from 'lucide-react';
 import { Markdown } from '@/lib/markdown';
@@ -7,7 +8,7 @@ function isToolPart(type: string) {
   return type === 'dynamic-tool' || type.startsWith('tool-');
 }
 
-export function MessageItem({ message }: { message: UIMessage }) {
+export const MessageItem = memo(function MessageItem({ message }: { message: UIMessage }) {
   const parts = message.parts as unknown as Array<Record<string, unknown>>;
   const isUser = message.role === 'user';
 
@@ -15,13 +16,15 @@ export function MessageItem({ message }: { message: UIMessage }) {
     return (
       <div className="flex justify-end px-4 py-2 sm:px-6">
         <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent-500/12 px-4 py-2.5 text-sm leading-relaxed text-mist-200 ring-1 ring-accent-500/20">
-          {parts.map((part, index) =>
-            part.type === 'text' ? (
+          {parts.map((part, index) => {
+            const text = String(part.text ?? '');
+            if (part.type !== 'text' || text.trimStart().startsWith('<plan_reminder>')) return null;
+            return (
               <div key={index} className="whitespace-pre-wrap">
-                {String(part.text ?? '')}
+                {text}
               </div>
-            ) : null,
-          )}
+            );
+          })}
         </div>
       </div>
     );
@@ -36,9 +39,11 @@ export function MessageItem({ message }: { message: UIMessage }) {
         {parts.map((part, index) => {
           const type = String(part.type ?? '');
           if (type === 'text') {
+            const text = String(part.text ?? '');
+            if (text.trimStart().startsWith('<plan_reminder>')) return null;
             return (
               <div key={index} className="text-mist-200">
-                <Markdown>{String(part.text ?? '')}</Markdown>
+                <Markdown>{text}</Markdown>
               </div>
             );
           }
@@ -69,7 +74,7 @@ export function MessageItem({ message }: { message: UIMessage }) {
       </div>
     </div>
   );
-}
+});
 
 export function findApprovalPart(message: UIMessage) {
   const parts = message.parts as unknown as Array<Record<string, unknown>>;

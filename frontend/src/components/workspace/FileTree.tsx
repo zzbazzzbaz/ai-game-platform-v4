@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, File, Folder, Loader2, RefreshCw } from 'lucide-react';
 import { api } from '@/api/client';
 import type { FileEntry } from '@/api/types';
@@ -15,10 +15,6 @@ function parentOf(path: string) {
   return index <= 0 ? '/' : normalized.slice(0, index);
 }
 
-function joinPath(base: string, name: string) {
-  return `${base.replace(/\/+$/, '')}/${name}`;
-}
-
 export function FileTree({ conversationId, onOpen }: Props) {
   const [path, setPath] = useState<string | undefined>(undefined);
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -26,13 +22,16 @@ export function FileTree({ conversationId, onOpen }: Props) {
   const [sandbox, setSandbox] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestSeq = useRef(0);
 
   const load = useCallback(
     async (target?: string) => {
+      const token = ++requestSeq.current;
       setLoading(true);
       setError(null);
       try {
         const result = await api.listFiles(conversationId, target);
+        if (token !== requestSeq.current) return;
         setRoot(result.path);
         setSandbox(result.sandbox);
         setEntries(
@@ -42,10 +41,11 @@ export function FileTree({ conversationId, onOpen }: Props) {
         );
         setPath(target ?? result.path);
       } catch (caught) {
+        if (token !== requestSeq.current) return;
         setError(caught instanceof Error ? caught.message : '读取目录失败');
         setEntries([]);
       } finally {
-        setLoading(false);
+        if (token === requestSeq.current) setLoading(false);
       }
     },
     [conversationId],
@@ -64,7 +64,7 @@ export function FileTree({ conversationId, onOpen }: Props) {
         <button
           type="button"
           onClick={() => void load(parentOf(current))}
-          disabled={loading || current === '/' || !current}
+          disabled={loading || !current || current === root}
           className="rounded-md p-1.5 text-mist-400 hover:bg-ink-800 hover:text-mist-200 disabled:opacity-30"
           title="上一级"
         >
@@ -117,5 +117,3 @@ export function FileTree({ conversationId, onOpen }: Props) {
     </div>
   );
 }
-
-export { joinPath };

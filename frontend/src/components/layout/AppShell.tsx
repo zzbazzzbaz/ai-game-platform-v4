@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { User } from '@/api/types';
 import { useConversations } from '@/hooks/useConversations';
 import { Sidebar } from './Sidebar';
@@ -7,12 +7,14 @@ import { ChatPanel, EmptyState } from '@/components/chat/ChatPanel';
 export function AppShell({ user, onLogout }: { user: User; onLogout: () => void }) {
   const { conversations, loading, create, remove, refresh, renameLocal } = useConversations(onLogout);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const initialized = useRef(false);
 
   useEffect(() => {
-    if (activeId === null && conversations.length > 0) {
+    if (!initialized.current && conversations.length > 0) {
+      initialized.current = true;
       setActiveId(conversations[0].id);
     }
-  }, [activeId, conversations]);
+  }, [conversations]);
 
   const handleCreate = useCallback(async () => {
     const created = await create();

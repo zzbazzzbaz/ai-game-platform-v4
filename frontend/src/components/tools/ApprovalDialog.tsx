@@ -12,6 +12,7 @@ interface Props {
 export function ApprovalDialog({ part, onRespond }: Props) {
   const [expanded, setExpanded] = useState(false);
   const [reason, setReason] = useState('');
+  const [submitting, setSubmitting] = useState(false);
   const toolName = part.type === 'dynamic-tool' ? (part.toolName ?? 'tool') : toolNameFromPartType(part.type);
   const meta = toolMeta(toolName);
   const approval = part.approval;
@@ -61,11 +62,22 @@ export function ApprovalDialog({ part, onRespond }: Props) {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onRespond(approval.id, false, reason.trim() || undefined)}
+            disabled={submitting}
+            onClick={() => {
+              setSubmitting(true);
+              onRespond(approval.id, false, reason.trim() || undefined);
+            }}
           >
             拒绝
           </Button>
-          <Button size="sm" onClick={() => onRespond(approval.id, true)}>
+          <Button
+            size="sm"
+            disabled={submitting}
+            onClick={() => {
+              setSubmitting(true);
+              onRespond(approval.id, true);
+            }}
+          >
             批准并继续
           </Button>
         </div>

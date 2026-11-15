@@ -1,14 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { highlightCode } from './shiki';
 
 function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const [html, setHtml] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
-    highlightCode(code, lang)
+    import('./shiki')
+      .then(({ highlightCode }) => highlightCode(code, lang))
       .then((result) => {
         if (active) setHtml(result);
       })
@@ -46,8 +46,8 @@ export function Markdown({ children }: { children: string }) {
           code: ({ className, children }) => {
             const match = /language-([\w-]+)/.exec(className ?? '');
             const text = String(children ?? '').replace(/\n$/, '');
-            if (match) {
-              return <CodeBlock code={text} lang={match[1]} />;
+            if (match || text.includes('\n')) {
+              return <CodeBlock code={text} lang={match?.[1] ?? 'text'} />;
             }
             return <code className={className}>{children as ReactNode}</code>;
           },

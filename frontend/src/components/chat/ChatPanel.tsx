@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { UIMessage } from 'ai';
 import { FolderTree, Globe, ListTodo, Loader2, Sparkles, X } from 'lucide-react';
 import { ApiError, api } from '@/api/client';
@@ -36,36 +36,49 @@ function ChatSession({
   detail,
   title,
   onUnauthorized,
+  onNotFound,
   onConversationChanged,
   onTitleHint,
 }: {
   detail: ConversationDetail;
   title: string;
   onUnauthorized: () => void;
+  onNotFound: () => void;
   onConversationChanged: () => void;
   onTitleHint: (id: string, title: string) => void;
 }) {
+  const [serverBusy, setServerBusy] = useState(false);
   const chat = useAgentChat({
     conversationId: detail.id,
     initialMessages: detail.messages,
     onFinish: onConversationChanged,
     onUnauthorized,
+    onNotFound,
+    onBusy: () => setServerBusy(true),
   });
   const [tab, setTab] = useState<DockTab>('plan');
   const [openFile, setOpenFile] = useState<{ path: string; name: string } | null>(null);
 
+  const stopRef = useRef(chat.stop);
+  stopRef.current = chat.stop;
+  useEffect(
+    () => () => {
+      void stopRef.current();
+    },
+    [],
+  );
+
+  const waitingApproval = detail.last_run?.status === 'waiting_approval';
   const approvalPart = useMemo(() => {
-    for (let index = chat.messages.length - 1; index >= 0; index -= 1) {
-      const found = findApprovalPart(chat.messages[index]);
-      if (found) return found;
-    }
-    return undefined;
-  }, [chat.messages]);
+    if (!waitingApproval) return undefined;
+    return findApprovalPart(chat.messages[chat.messages.length - 1]);
+  }, [chat.messages, waitingApproval]);
 
   const status = statusLabel(chat.status, Boolean(approvalPart));
 
   const send = (text: string) => {
     if (chat.messages.length === 0) onTitleHint(detail.id, text.slice(0, 40));
+    setServerBusy(false);
     void chat.sendMessage({ text });
   };
 
@@ -82,7 +95,7 @@ function ChatSession({
         <div className="ml-auto hidden items-center gap-2 font-mono text-[10px] text-mist-400/70 sm:flex">
           <span>{detail.id.slice(0, 8)}</span>
           <span className="text-ink-600">·</span>
-          <span>{detail.last_run?.model ?? 'deepseek:deepseek-flash'}</span>
+          <span>{detail.last_run?.model ?? '—'}</span>
           {detail.last_run?.usage && (
             <>
               <span className="text-ink-600">·</span>
@@ -101,6 +114,18 @@ function ChatSession({
           {chat.error && (
             <div className="mx-4 mb-2 flex items-start gap-2 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300 sm:mx-6">
               <span className="flex-1">{chat.error.message || '请求失败'}</span>
+              {serverBusy && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setServerBusy(false);
+                    chat.clearError();
+                  }}
+                  className="text-red-200 underline underline-offset-2"
+                >
+                  重试
+                </button>
+              )}
               <button type="button" onClick={() => chat.clearError()} className="text-red-300/70 hover:text-red-200">
                 <X className="h-3.5 w-3.5" />
               </button>
@@ -110,9 +135,10 @@ function ChatSession({
             status={chat.status}
             onSend={send}
             onStop={() => void chat.stopRun()}
+            disabled={Boolean(approvalPart) || serverBusy}
             placeholder={
-              detail.last_run?.status === 'waiting_approval' && !approvalPart
-                ? '继续补充要求，或让智能体继续…'
+              approvalPart
+                ? '请先处理上方的审批请求…'
                 : undefined
             }
           />
@@ -166,6 +192,7 @@ function ChatSession({
 
       {approvalPart && (
         <ApprovalDialog
+          key={approvalPart.approval?.id}
           part={approvalPart}
           onRespond={(id, approved, reason) =>
             void chat.addToolApprovalResponse({ id, approved, reason })
@@ -186,15 +213,21 @@ export function ChatPanel({
 }: Props) {
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const conversationRef = useRef(conversationId);
+  conversationRef.current = conversationId;
+  const callbacksRef = useRef({ onUnauthorized, onNotFound, onConversationChanged });
+  callbacksRef.current = { onUnauthorized, onNotFound, onConversationChanged };
 
   const reloadDetail = useCallback(async () => {
+    const target = conversationRef.current;
     try {
-      setDetail(await api.getConversation(conversationId));
+      const next = await api.getConversation(target);
+      if (conversationRef.current === target) setDetail(next);
     } catch {
-      // 侧边栏刷新仍然继续，失败时保留已有详情
+      // 会话列表仍会刷新，失败时保留已有详情
     }
-    onConversationChanged();
-  }, [conversationId, onConversationChanged]);
+    callbacksRef.current.onConversationChanged();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -208,11 +241,11 @@ export function ChatPanel({
       .catch((caught) => {
         if (!active) return;
         if (caught instanceof ApiError && caught.status === 401) {
-          onUnauthorized();
+          callbacksRef.current.onUnauthorized();
           return;
         }
         if (caught instanceof ApiError && caught.status === 404) {
-          onNotFound();
+          callbacksRef.current.onNotFound();
           return;
         }
         setError(caught instanceof Error ? caught.message : '加载会话失败');
@@ -220,13 +253,15 @@ export function ChatPanel({
     return () => {
       active = false;
     };
-  }, [conversationId, onNotFound, onUnauthorized]);
+  }, [conversationId, reloadDetail]);
+
+  const current = detail?.id === conversationId ? detail : null;
 
   if (error) {
     return <div className="p-6 text-sm text-red-300">{error}</div>;
   }
 
-  if (!detail) {
+  if (!current) {
     return (
       <div className="flex flex-1 items-center justify-center gap-2 text-sm text-mist-400">
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -238,9 +273,10 @@ export function ChatPanel({
   return (
     <ChatSession
       key={conversationId}
-      detail={detail}
+      detail={current}
       title={title}
       onUnauthorized={onUnauthorized}
+      onNotFound={onNotFound}
       onConversationChanged={() => void reloadDetail()}
       onTitleHint={onTitleHint}
     />

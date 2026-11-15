@@ -5,7 +5,10 @@ interface Props {
 
 export function ShellOutput({ output, running }: Props) {
   if (!output && !running) return null;
-  const exit = /===\s*exit:\s*(-?\d+)\s*===/.exec(output);
+  const exit =
+    /\[exit code:\s*(-?\d+)\]/.exec(output) ??
+    /"exit_code":\s*(-?\d+)/.exec(output) ??
+    /===\s*exit:\s*(-?\d+)\s*===/.exec(output);
   const failed = exit ? Number(exit[1]) !== 0 : false;
 
   return (

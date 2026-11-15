@@ -101,7 +101,7 @@ class SandboxSession(Base):
     )
     provider: Mapped[str] = mapped_column(Text, nullable=False, server_default="e2b")
     sandbox_id: Mapped[str] = mapped_column(Text, nullable=False)
-    template: Mapped[str] = mapped_column(Text, nullable=False, server_default="")
+    template: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)

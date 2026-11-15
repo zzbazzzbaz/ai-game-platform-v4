@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.models import SandboxSession
+from app.models import Run, SandboxSession
 from app.runtime.sandboxes import SandboxRegistry
 
 logger = logging.getLogger(__name__)
@@ -34,11 +34,13 @@ class SandboxReaper:
     async def sweep(self) -> int:
         cutoff = datetime.now(UTC) - timedelta(seconds=settings.sandbox_idle_seconds)
         async with self._sessions() as session:
+            running = select(Run.conversation_id).where(Run.status == "running")
             rows = (
                 await session.scalars(
                     select(SandboxSession).where(
                         SandboxSession.status == "active",
                         SandboxSession.last_used_at < cutoff,
+                        SandboxSession.conversation_id.not_in(running),
                     )
                 )
             ).all()
