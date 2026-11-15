@@ -36,6 +36,8 @@ frontend/
     │   ├── useAgentChat.ts
     │   └── useConversations.ts
     ├── components/
+    │   ├── auth/
+    │   │   └── LoginPage.tsx
     │   ├── layout/
     │   │   ├── AppShell.tsx
     │   │   └── Sidebar.tsx
@@ -56,10 +58,12 @@ frontend/
     │   │   ├── FileViewer.tsx
     │   │   └── PreviewPane.tsx
     │   └── ui/
+    │       └── button.tsx
     ├── lib/
     │   ├── markdown.tsx
     │   ├── shiki.ts
-    │   └── tool-meta.ts
+    │   ├── tool-meta.ts
+    │   └── utils.ts
     └── styles/
         └── globals.css
 ```
@@ -155,7 +159,7 @@ sequenceDiagram
 | 其他 `tool-*` | `ToolCallCard` 的通用渲染 |
 | `error` | 错误条 |
 
-消息底部的 token 用量来自 `GET /api/runs/{id}` 返回的 `usage` 字段。
+消息区顶部的 token 用量来自 `GET /api/conversations/{id}` 返回的 `last_run.usage` 字段。
 
 工具名与展示信息的映射集中在 `lib/tool-meta.ts`：
 
@@ -180,7 +184,7 @@ sequenceDiagram
 | 当前 conversation_id | `AppShell` |
 | 会话列表 | `useConversations` |
 | 右侧面板标签 | `AppShell` 的本地 state |
-| 审批对话框开关 | `MessageItem` 检测到 `approval-requested` 时的本地 state |
+| 审批对话框开关 | `ChatPanel` 扫描消息中的 `approval-requested` part，渲染 `ApprovalDialog` |
 
 不引入全局状态库。跨组件数据通过 props 和自定义 hook 传递。
 

@@ -48,7 +48,8 @@ pydantic-ai学习/
 │   │   ├── models.py
 │   │   ├── auth/
 │   │   │   ├── router.py
-│   │   │   └── deps.py
+│   │   │   ├── deps.py
+│   │   │   └── security.py
 │   │   ├── api/
 │   │   │   ├── chat.py
 │   │   │   ├── conversations.py
@@ -70,7 +71,8 @@ pydantic-ai学习/
 │   │       └── conversations.py
 │   └── scripts/
 │       ├── spike_local_agent.py
-│       └── spike_aliyun_sandbox.py
+│       ├── spike_aliyun_sandbox.py
+│       └── smoke_chat.py
 └── frontend/
     └── src/
 ```
@@ -159,7 +161,7 @@ sequenceDiagram
 
 | Capability | 作用 |
 | --- | --- |
-| `ConversationWorkspace` | 从 `AgentDeps.sandbox_ref` 解析工作区；无 ref 时创建沙箱并回写 `sandbox_sessions` |
+| `ConversationWorkspace` | 从 `AgentDeps.sandbox_ref` 解析工作区；沙箱由 `SandboxRegistry` 在 run 前创建并登记 |
 | `Coder` | 文件读写、编辑、列目录、grep、shell、子任务委派、上下文清理与工具结果截断 |
 | `Permissions` | 依据 `AgentDeps.approval_mode` 生成审批请求 |
 | `Planning` | 计划工具；使用默认内存存储 |

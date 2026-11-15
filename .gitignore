@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+backend/.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+frontend/dist/
+
+# 本地配置与密钥
+.env
+backend/.env
+
+# 工具与系统
+.DS_Store
+.idea/
+.logfire/
+
+# TS build info
+*.tsbuildinfo
