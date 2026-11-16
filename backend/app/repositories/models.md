@@ -1,6 +1,6 @@
-# 数据模型
+# 数据库设计
 
-SQLAlchemy 模型位于 `backend/app/repositories/models.py`，全部继承同一个 `Base`，由 Alembic 读取 `Base.metadata` 生成迁移。
+SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`，由 Alembic 读取 `Base.metadata` 生成迁移。
 
 数据库为 PostgreSQL 17.11，Schema 为 `public`。建表 SQL 与 ER 图见 `docs/database-design.md`。
 

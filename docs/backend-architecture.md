@@ -32,8 +32,7 @@ pydantic-ai学习/
 ├── docs/
 │   ├── backend-architecture.md
 │   ├── frontend-architecture.md
-│   ├── database-design.md
-│   └── models.md
+│   └── database-design.md
 ├── backend/
 │   ├── pyproject.toml
 │   ├── uv.lock
@@ -67,6 +66,7 @@ pydantic-ai学习/
 │   │   ├── repositories/
 │   │   │   ├── __init__.py
 │   │   │   ├── models.py
+│   │   │   ├── models.md
 │   │   │   ├── conversation_store.py
 │   │   │   ├── conversations.py
 │   │   │   ├── runs.py
