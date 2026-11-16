@@ -20,3 +20,6 @@ backend/.env
 
 # TS build info
 *.tsbuildinfo
+
+# 模板构建临时文件
+.build-template/
