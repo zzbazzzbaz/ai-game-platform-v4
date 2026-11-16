@@ -96,7 +96,7 @@ export function Sidebar({
           </div>
           <div className="min-w-0 flex-1">
             <div className="truncate text-[11px] text-mist-200">{user.email}</div>
-            <div className="text-[10px] text-mist-400/70">demo 用户</div>
+            <div className="text-[10px] text-mist-400/70">已登录</div>
           </div>
           <button
             type="button"

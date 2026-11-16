@@ -58,18 +58,6 @@ async def register(session: AsyncSession, *, email: str, password: str) -> User:
     )
 
 
-async def ensure_demo_user(session: AsyncSession) -> User:
-    email = _normalize_email(settings.demo_email)
-    user = await users.get_by_email(session, email)
-    if user is not None:
-        return user
-    return await users.create(
-        session,
-        email=email,
-        password_hash=hash_password(settings.demo_password),
-    )
-
-
 async def issue_session(session: AsyncSession, user: User) -> IssuedSession:
     token, token_hash = new_session_token()
     await users.create_session(

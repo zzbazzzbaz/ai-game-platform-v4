@@ -45,8 +45,6 @@ export const api = {
       body: JSON.stringify({ email, password }),
     }),
 
-  demoLogin: () => apiFetch<User>('/api/auth/demo', { method: 'POST' }),
-
   logout: () => apiFetch<void>('/api/auth/logout', { method: 'POST' }),
 
   listConversations: () => apiFetch<Conversation[]>('/api/conversations'),

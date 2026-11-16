@@ -23,9 +23,6 @@ class Settings(BaseSettings):
     session_cookie: str
     session_ttl_seconds: int
 
-    demo_email: str
-    demo_password: str
-
     e2b_api_key: str
     e2b_api_url: str
     e2b_domain: str

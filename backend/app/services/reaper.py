@@ -27,7 +27,7 @@ class SandboxReaper:
         while True:
             try:
                 await self.sweep()
-            except Exception:  # noqa: BLE001
+            except Exception:  # 单次扫描失败不退出循环
                 logger.exception("沙箱回收失败")
             await asyncio.sleep(SCAN_INTERVAL_SECONDS)
 
@@ -47,7 +47,7 @@ class SandboxReaper:
         for row in rows:
             try:
                 await self._registry.kill_checked(row.sandbox_id)
-            except Exception:  # noqa: BLE001
+            except Exception:  # 单个沙箱失败不影响其余记录
                 logger.warning("回收沙箱 %s 失败", row.sandbox_id, exc_info=True)
                 continue
             async with self._sessions() as session:

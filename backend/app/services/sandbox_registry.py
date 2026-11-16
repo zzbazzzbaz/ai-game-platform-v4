@@ -31,14 +31,11 @@ class SandboxHandle:
 
 
 def create_e2b_client() -> e2b.E2B:
-    options: dict[str, object] = {}
-    if settings.e2b_api_key:
-        options["api_key"] = settings.e2b_api_key
-    if settings.e2b_api_url:
-        options["api_url"] = settings.e2b_api_url
-    if settings.e2b_domain:
-        options["domain"] = settings.e2b_domain
-    return e2b.E2B(**options)  # type: ignore[arg-type]
+    return e2b.E2B(
+        api_key=settings.e2b_api_key or None,
+        api_url=settings.e2b_api_url or None,
+        domain=settings.e2b_domain or None,
+    )
 
 
 class SandboxRegistry:
@@ -67,7 +64,7 @@ class SandboxRegistry:
                 timeout=settings.sandbox_timeout,
                 lifecycle={"on_timeout": "pause"},
             )
-        except Exception as error:  # noqa: BLE001 - 统一转成 503
+        except Exception as error:  # 统一转成 503
             raise SandboxUnavailable(f"创建沙箱失败：{error}") from error
 
         expires_at = datetime.now(UTC) + timedelta(seconds=settings.sandbox_timeout)
@@ -149,12 +146,12 @@ class SandboxRegistry:
         try:
             sandbox = await self._client.AsyncSandbox.connect(handle.sandbox_id)
             host = sandbox.get_host(port)
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:  # 统一转成 503
             raise SandboxUnavailable(f"获取预览地址失败：{error}") from error
         return host if host.startswith("http") else f"https://{host}"
 
     async def _kill_quietly(self, sandbox_id: str) -> None:
         try:
             await self._client.AsyncSandbox.kill(sandbox_id)
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001, S110 - 回收失败保持静默
             pass

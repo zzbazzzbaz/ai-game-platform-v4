@@ -202,7 +202,6 @@ sequenceDiagram
 | --- | --- | --- |
 | `POST` | `/api/auth/login` | 登录 |
 | `POST` | `/api/auth/register` | 注册 |
-| `POST` | `/api/auth/demo` | 演示账号登录 |
 | `POST` | `/api/auth/logout` | 退出登录 |
 | `GET` | `/api/me` | 当前用户 |
 | `POST` | `/api/chat` | 发送消息，返回 SSE |

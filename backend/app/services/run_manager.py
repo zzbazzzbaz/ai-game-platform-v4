@@ -159,7 +159,7 @@ class RunManager:
                     )
                 )
                 await session.commit()
-        except Exception:  # noqa: BLE001 - 收尾失败仍必须释放运行锁
+        except Exception:  # 收尾失败仍必须释放运行锁
             logger.exception("更新 run %s 状态失败", active.id)
         finally:
             if active._lock_connection is not None:

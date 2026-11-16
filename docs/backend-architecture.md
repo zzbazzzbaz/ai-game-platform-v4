@@ -103,7 +103,7 @@ pydantic-ai学习/
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
 | 应用入口 | `app/main.py` | FastAPI 实例、CORS、路由挂载、健康检查 |
-| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run、演示账号、reaper |
+| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run、reaper |
 | 依赖 | `app/dependencies.py` | 当前用户、服务实例与 FastAPI 依赖别名 |
 | 接入层 | `app/endpoints/` | HTTP 路由、SSE、请求解析、错误映射 |
 | 业务层 | `app/services/` | 认证、会话、聊天、沙箱、运行锁、空闲回收 |
@@ -164,7 +164,6 @@ sequenceDiagram
 | --- | --- | --- |
 | `POST` | `/api/auth/login` | 登录并写入会话 Cookie |
 | `POST` | `/api/auth/register` | 注册并写入会话 Cookie |
-| `POST` | `/api/auth/demo` | 演示账号一键登录 |
 | `POST` | `/api/auth/logout` | 退出登录 |
 | `GET` | `/api/health` | 健康检查 |
 | `GET` | `/api/me` | 当前用户 |
@@ -372,8 +371,6 @@ HTTP 错误统一由 `app/errors.py` 的工厂函数生成。`unauthorized()`、
 | `SESSION_SECRET` | 会话 Cookie 签名密钥 |
 | `SESSION_COOKIE` | 会话 Cookie 名称，`.env` 中为 `agent_session` |
 | `SESSION_TTL_SECONDS` | 会话有效期，`.env` 中为 `2592000` |
-| `DEMO_EMAIL` | 演示账号邮箱 |
-| `DEMO_PASSWORD` | 演示账号密码 |
 | `E2B_API_KEY` | 阿里云 Agent Sandbox API Key |
 | `E2B_API_URL` | `https://api.<region>.sandbox.aliyuncs.com` |
 | `E2B_DOMAIN` | `<region>.sandbox.aliyuncs.com` |
@@ -394,3 +391,10 @@ uv run uvicorn app.main:app --reload --port 8000
 ```
 
 `uv` 使用根目录的 `.python-version`（3.14），虚拟环境位于 `backend/.venv`。
+
+静态检查：
+
+```bash
+uv run ruff check
+uv run ty check
+```

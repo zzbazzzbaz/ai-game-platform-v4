@@ -91,7 +91,7 @@ async def save_cancelled(
             revision=loaded.revision if loaded is not None else None,
         )
         await store.save(conversation, scope=str(scope))
-    except Exception:  # noqa: BLE001 - 取消时保存失败不应吞掉取消本身
+    except Exception:  # 取消时保存失败不应吞掉取消本身
         logger.exception("保存取消时的会话失败")
 
 

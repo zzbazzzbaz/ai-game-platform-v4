@@ -232,12 +232,14 @@ class PostgresConversationStore(ConversationStore):
                         )
                         .values(**values)
                     )
-                    if result.rowcount == 0:
+                    if getattr(result, "rowcount", 0) == 0:
                         raise ConversationConflict(record.conversation_id)
 
                 revision = await session.scalar(
                     select(literal_column("xmin::text")).where(ConversationRow.id == conversation_id)
                 )
+                if revision is None:
+                    raise ConversationConflict(record.conversation_id)
                 record.revision = revision
         except IntegrityError as error:
             raise ConversationConflict(record.conversation_id) from error
@@ -250,5 +252,5 @@ class PostgresConversationStore(ConversationStore):
                     literal_column("xmin::text") == expected_revision,
                 )
             )
-            if result.rowcount == 0:
+            if getattr(result, "rowcount", 0) == 0:
                 raise ConversationConflict(conversation_id)

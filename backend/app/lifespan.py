@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 import logfire
@@ -13,7 +13,7 @@ from pydantic_ai.models import infer_model
 from app.config import settings
 from app.database import dispose_engine, session_factory
 from app.repositories.conversation_store import PostgresConversationStore
-from app.services import auth_service, run_service
+from app.services import run_service
 from app.services.agent.factory import AgentFactory
 from app.services.reaper import SandboxReaper
 from app.services.run_manager import RunManager
@@ -22,13 +22,8 @@ from app.services.sandbox_registry import SandboxRegistry, create_e2b_client
 logger = logging.getLogger(__name__)
 
 
-async def _seed_demo_user() -> None:
-    async with session_factory() as session:
-        await auth_service.ensure_demo_user(session)
-
-
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if settings.deepseek_api_key:
         os.environ["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
 
@@ -57,7 +52,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     stale = await run_service.fail_stale_runs(session_factory)
     if stale:
         logger.info("已标记 %s 条遗留的 running 记录为 failed", stale)
-    await _seed_demo_user()
 
     reaper = SandboxReaper(registry, session_factory)
     reaper_task = asyncio.create_task(reaper.run_forever())

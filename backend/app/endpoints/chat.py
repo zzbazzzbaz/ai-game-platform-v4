@@ -9,6 +9,7 @@ from fastapi import APIRouter, Request
 from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import AgentRunResult
 from pydantic_ai.exceptions import RunCancelled, UserError
+from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from pydantic_ai.usage import RunUsage
 from starlette.background import BackgroundTask
@@ -69,7 +70,7 @@ async def chat(
 
     agent = agent_factory.build()
     try:
-        adapter = await VercelAIAdapter.from_request(
+        adapter = await VercelAIAdapter[AgentDeps, str | DeferredToolRequests].from_request(
             request,
             agent=agent,
             sdk_version=6,
@@ -115,7 +116,7 @@ async def chat(
     async def finalize() -> None:
         try:
             await registry.touch(handle.sandbox_id)
-        except Exception:  # noqa: BLE001 - 收尾失败不影响运行记录
+        except Exception:  # 收尾失败不影响运行记录
             logger.exception("更新沙箱 last_used_at 失败")
         await run_manager.finish(active)
 
@@ -160,7 +161,7 @@ async def chat(
                     except asyncio.CancelledError:
                         pass
                 raise
-            except BaseException as error:  # noqa: BLE001 - 记录后交给运行记录
+            except BaseException as error:  # 记录后交给运行记录
                 active.error = error
                 if chat_service.workspace_unavailable(error):
                     await registry.mark_dead(handle.sandbox_id)

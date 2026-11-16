@@ -101,7 +101,7 @@ async def upload_file(
     user: CurrentUser,
     session: DbSession,
     registry: RegistryDep,
-    file: UploadFile = File(...),
+    file: UploadFile = File(...),  # noqa: B008 - FastAPI 依赖必须写在参数默认值
     path: str | None = Form(default=None),
 ) -> UploadOut:
     await _ensure_owned(conversation_id, user, session)

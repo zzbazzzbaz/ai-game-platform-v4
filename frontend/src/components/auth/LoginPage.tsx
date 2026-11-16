@@ -5,33 +5,21 @@ import type { User } from '@/api/types';
 import { Button } from '@/components/ui/button';
 
 export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
-  const [email, setEmail] = useState('demo@example.com');
-  const [password, setPassword] = useState('demo1234');
-  const [loading, setLoading] = useState<'login' | 'demo' | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    setLoading('login');
+    setLoading(true);
     setError(null);
     try {
       onLogin(await api.login(email, password));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : '登录失败');
     } finally {
-      setLoading(null);
-    }
-  };
-
-  const demo = async () => {
-    setLoading('demo');
-    setError(null);
-    try {
-      onLogin(await api.demoLogin());
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '登录失败');
-    } finally {
-      setLoading(null);
+      setLoading(false);
     }
   };
 
@@ -73,25 +61,11 @@ export function LoginPage({ onLogin }: { onLogin: (user: User) => void }) {
             />
           </label>
           {error && <div className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-300">{error}</div>}
-          <Button type="submit" className="w-full" disabled={loading !== null}>
-            {loading === 'login' && <Loader2 className="h-4 w-4 animate-spin" />}
+          <Button type="submit" className="w-full" disabled={loading}>
+            {loading && <Loader2 className="h-4 w-4 animate-spin" />}
             登录
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => void demo()}
-            disabled={loading !== null}
-          >
-            {loading === 'demo' && <Loader2 className="h-4 w-4 animate-spin" />}
-            使用演示账号
-          </Button>
         </form>
-
-        <p className="mt-4 text-center text-[10px] text-mist-400/60">
-          演示账号 demo@example.com / demo1234
-        </p>
       </div>
     </div>
   );

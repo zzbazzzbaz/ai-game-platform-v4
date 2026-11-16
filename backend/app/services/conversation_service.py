@@ -109,7 +109,7 @@ async def delete_conversation(
     if handle is not None:
         try:
             await registry.kill_checked(handle.sandbox_id)
-        except Exception as error:  # noqa: BLE001 - 保留记录，交给下一次重试或回收
+        except Exception as error:  # 保留记录，交给下一次重试或回收
             raise SandboxCleanupError from error
 
     await store.delete(str(conversation_id), scope=str(user_id))

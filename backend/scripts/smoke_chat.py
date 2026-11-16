@@ -1,28 +1,29 @@
-"""通过 HTTP 跑一次真实的聊天 SSE：登录演示账号、创建会话、发送一条消息。"""
+"""通过 HTTP 跑一次真实的聊天 SSE：注册临时账号、创建会话、发送一条消息。"""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import sys
+import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
-from app.config import settings
-
 BASE_URL = "http://127.0.0.1:8000"
 
 
 async def main() -> None:
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=300) as client:
-        login = await client.post(
-            "/api/auth/login",
-            json={"email": settings.demo_email, "password": settings.demo_password},
+        email = f"smoke-{uuid.uuid4().hex[:12]}@example.com"
+        register = await client.post(
+            "/api/auth/register",
+            json={"email": email, "password": "smoke-pass-1234"},
         )
-        login.raise_for_status()
+        register.raise_for_status()
+        print("account:", email)
         conversation = (await client.post("/api/conversations")).json()
         print("conversation:", conversation["id"])
 

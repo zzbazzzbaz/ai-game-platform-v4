@@ -49,4 +49,4 @@ async def fail_stale(session: AsyncSession, *, started_before: datetime) -> int:
         )
     )
     await session.commit()
-    return int(result.rowcount or 0)
+    return int(getattr(result, "rowcount", 0) or 0)

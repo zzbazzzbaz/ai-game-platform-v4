@@ -76,12 +76,3 @@ async def logout(
 @router.get("/me", response_model=UserOut)
 async def me(user: CurrentUser) -> UserOut:
     return UserOut.model_validate(user)
-
-
-@router.post("/auth/demo", response_model=UserOut)
-async def demo_login(response: Response, session: DbSession) -> UserOut:
-    """演示账号一键登录。"""
-    user = await auth_service.ensure_demo_user(session)
-    issued = await auth_service.issue_session(session, user)
-    _set_session_cookie(response, issued)
-    return UserOut.model_validate(user)
