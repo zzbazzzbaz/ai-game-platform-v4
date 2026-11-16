@@ -27,7 +27,7 @@ from app.runtime.agent.deps import AgentDeps
 from app.runtime.runs import hitl
 from app.runtime.runs.manager import RunBusy
 from app.runtime.runs.stream import AgentRunStream
-from app.runtime.sandboxes.errors import SandboxUnavailable
+from app.runtime.sandboxes.errors import LockBusy, SandboxUnavailable
 from app.services import conversation_service
 
 logger = logging.getLogger(__name__)
@@ -150,6 +150,11 @@ async def chat(
         active.error = error
         await run_manager.finish(active)
         raise service_unavailable() from error
+    except LockBusy as error:
+        logger.warning("工作区锁占用：conversation_id=%s error=%s", conversation_id, error)
+        active.error = error
+        await run_manager.finish(active)
+        raise conflict() from error
     except BaseException:
         await run_manager.finish(active)
         raise
