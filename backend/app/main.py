@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.endpoints import api_router
 from app.lifespan import lifespan
+
+logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(title="Pydantic AI Agent", version="0.1.0", lifespan=lifespan)
 

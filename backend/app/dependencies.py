@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -15,6 +16,8 @@ from app.services import auth_service
 from app.services.agent.factory import AgentFactory
 from app.services.run_manager import RunManager
 from app.services.sandbox_registry import SandboxRegistry
+
+logger = logging.getLogger(__name__)
 
 DbSession = Annotated[AsyncSession, Depends(get_session)]
 
@@ -39,10 +42,12 @@ async def current_user(request: Request, session: DbSession) -> User:
     cookie = request.cookies.get(settings.session_cookie)
     token = token_from_cookie(cookie) if cookie else None
     if token is None:
+        logger.warning("请求未携带有效的会话 Cookie")
         raise unauthorized()
 
     user = await auth_service.user_from_token(session, token)
     if user is None:
+        logger.warning("会话令牌无效或已过期")
         raise unauthorized()
     return user
 

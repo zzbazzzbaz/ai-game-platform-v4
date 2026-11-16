@@ -343,7 +343,7 @@ agent = Agent(
 
 ## 9. 异常与状态
 
-HTTP 错误统一由 `app/errors.py` 的工厂函数生成。`unauthorized()`、`not_found()`、`conflict()`、`service_unavailable()` 使用固定提示；需要业务明细时使用 `bad_request_detail(detail)`、`conflict_detail(detail)`；文件相关使用 `payload_too_large()`、`bad_gateway()`。
+HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包含固定提示，具体原因和上下文只写入后端日志。
 
 `runs.status` 取值：
 

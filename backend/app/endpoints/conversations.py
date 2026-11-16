@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 
 from fastapi import APIRouter, status
@@ -12,8 +13,10 @@ from app.dependencies import (
     StoreDep,
 )
 from app.dto.conversation import ConversationDetailOut, ConversationOut
-from app.errors import conflict_detail, not_found, service_unavailable
+from app.errors import conflict, not_found, service_unavailable
 from app.services import conversation_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/conversations", tags=["会话"])
 
@@ -51,6 +54,9 @@ async def get_conversation(
             store=store,
         )
     except conversation_service.ConversationNotFoundError as error:
+        logger.warning(
+            "读取会话失败：会话不存在，conversation_id=%s user_id=%s", conversation_id, user.id
+        )
         raise not_found() from error
 
 
@@ -73,8 +79,19 @@ async def delete_conversation(
             run_manager=run_manager,
         )
     except conversation_service.ConversationNotFoundError as error:
+        logger.warning(
+            "删除会话失败：会话不存在，conversation_id=%s user_id=%s", conversation_id, user.id
+        )
         raise not_found() from error
     except conversation_service.ConversationBusyError as error:
-        raise conflict_detail("会话正在运行，无法删除") from error
+        logger.warning(
+            "删除会话失败：会话正在运行，conversation_id=%s user_id=%s",
+            conversation_id,
+            user.id,
+        )
+        raise conflict() from error
     except conversation_service.SandboxCleanupError as error:
+        logger.warning(
+            "删除会话失败：沙箱销毁失败，conversation_id=%s error=%s", conversation_id, error
+        )
         raise service_unavailable() from error

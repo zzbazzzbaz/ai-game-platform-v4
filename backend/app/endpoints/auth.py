@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import APIRouter, Request, Response, status
 
 from app.config import settings
 from app.dependencies import CurrentUser, DbSession
 from app.dto.auth import LoginRequest, UserOut
-from app.errors import bad_request_detail, conflict_detail, unauthorized
+from app.errors import bad_request, conflict, unauthorized
 from app.security import token_from_cookie
 from app.services import auth_service
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["认证"])
 
@@ -33,6 +37,7 @@ async def login(
     try:
         user = await auth_service.login(session, email=body.email, password=body.password)
     except auth_service.InvalidCredentialsError as error:
+        logger.warning("登录失败：邮箱或密码错误，email=%s", body.email)
         raise unauthorized() from error
 
     issued = await auth_service.issue_session(session, user)
@@ -49,9 +54,11 @@ async def register(
     try:
         user = await auth_service.register(session, email=body.email, password=body.password)
     except auth_service.EmailTakenError as error:
-        raise conflict_detail("邮箱已注册") from error
+        logger.warning("注册失败：邮箱已注册，email=%s", body.email)
+        raise conflict() from error
     except auth_service.WeakPasswordError as error:
-        raise bad_request_detail("密码至少 6 位") from error
+        logger.warning("注册失败：密码长度不足，email=%s", body.email)
+        raise bad_request() from error
 
     issued = await auth_service.issue_session(session, user)
     _set_session_cookie(response, issued)
