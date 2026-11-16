@@ -1,62 +1,32 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 
-from app.api.deps import get_registry, get_run_manager, get_store, owned_conversation
-from app.auth.deps import current_user
 from app.db import get_session
+from app.endpoint.deps import (
+    current_user,
+    get_registry,
+    get_run_manager,
+    get_store,
+    owned_conversation,
+)
+from app.endpoint.schemas.conversation import ConversationOut
+from app.endpoint.schemas.run import RunOut
 from app.models import Conversation, Run, User
 from app.runtime.runs import RunManager
 from app.runtime.sandboxes import SandboxRegistry
 from app.store.conversations import PostgresConversationStore
 
-router = APIRouter(prefix="/api", tags=["conversations"])
+router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
-class ConversationOut(BaseModel):
-    id: str
-    title: str
-    created_at: datetime
-    updated_at: datetime
-
-
-class RunOut(BaseModel):
-    id: str
-    status: str
-    model: str
-    started_at: datetime
-    finished_at: datetime | None
-    usage: dict[str, Any]
-    error: dict[str, Any] | None
-
-    @classmethod
-    def from_run(cls, run: Run) -> "RunOut":
-        return cls(
-            id=str(run.id),
-            status=run.status,
-            model=run.model,
-            started_at=run.started_at,
-            finished_at=run.finished_at,
-            usage=run.usage,
-            error=run.error,
-        )
-
-
-def _conversation_out(row: Conversation) -> ConversationOut:
-    return ConversationOut(
-        id=str(row.id), title=row.title, created_at=row.created_at, updated_at=row.updated_at
-    )
-
-
-@router.get("/conversations", response_model=list[ConversationOut])
+@router.get("", response_model=list[ConversationOut])
 async def list_conversations(
     user: Annotated[User, Depends(current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -68,10 +38,10 @@ async def list_conversations(
             .order_by(Conversation.updated_at.desc())
         )
     ).all()
-    return [_conversation_out(row) for row in rows]
+    return [ConversationOut.from_row(row) for row in rows]
 
 
-@router.post("/conversations", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)
+@router.post("", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
     user: Annotated[User, Depends(current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
@@ -80,10 +50,10 @@ async def create_conversation(
     session.add(row)
     await session.commit()
     await session.refresh(row)
-    return _conversation_out(row)
+    return ConversationOut.from_row(row)
 
 
-@router.get("/conversations/{conversation_id}")
+@router.get("/{conversation_id}")
 async def get_conversation(
     conversation_id: uuid.UUID,
     user: Annotated[User, Depends(current_user)],
@@ -117,7 +87,7 @@ async def get_conversation(
     }
 
 
-@router.delete("/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
     conversation_id: uuid.UUID,
     user: Annotated[User, Depends(current_user)],

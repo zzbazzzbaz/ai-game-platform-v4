@@ -46,15 +46,21 @@ pydantic-ai学习/
 │   │   ├── config.py
 │   │   ├── db.py
 │   │   ├── models.py
-│   │   ├── auth/
-│   │   │   ├── router.py
+│   │   ├── security.py
+│   │   ├── endpoint/
+│   │   │   ├── __init__.py
 │   │   │   ├── deps.py
-│   │   │   └── security.py
-│   │   ├── api/
+│   │   │   ├── auth.py
 │   │   │   ├── chat.py
 │   │   │   ├── conversations.py
 │   │   │   ├── runs.py
-│   │   │   └── sandbox.py
+│   │   │   ├── sandbox.py
+│   │   │   └── schemas/
+│   │   │       ├── __init__.py
+│   │   │       ├── auth.py
+│   │   │       ├── conversation.py
+│   │   │       ├── run.py
+│   │   │       └── sandbox.py
 │   │   ├── agent/
 │   │   │   ├── factory.py
 │   │   │   ├── deps.py
@@ -81,8 +87,8 @@ pydantic-ai学习/
 
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
-| 接入层 | `app/api/` | HTTP 路由、SSE、请求参数校验 |
-| 认证 | `app/auth/` | 登录、会话 Cookie、当前用户解析 |
+| 接入层 | `app/endpoint/` | HTTP 路由、SSE、请求与响应 schema |
+| 认证 | `app/endpoint/auth.py`、`app/security.py` | 登录、会话 Cookie、当前用户解析、密码与令牌 |
 | 运行时 | `app/runtime/` | 运行锁、运行记录、沙箱登记、空闲回收 |
 | Agent | `app/agent/` | 模型、指令、依赖、capability 组装 |
 | 存储 | `app/store/` | `ConversationStore` 的 Postgres 实现 |

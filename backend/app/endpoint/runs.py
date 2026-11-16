@@ -6,15 +6,15 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.conversations import RunOut
-from app.auth.deps import current_user
 from app.db import get_session
+from app.endpoint.deps import current_user
+from app.endpoint.schemas.run import RunOut
 from app.models import Run, User
 
-router = APIRouter(prefix="/api", tags=["runs"])
+router = APIRouter(prefix="/runs", tags=["runs"])
 
 
-@router.get("/runs/{run_id}", response_model=RunOut)
+@router.get("/{run_id}", response_model=RunOut)
 async def get_run(
     run_id: uuid.UUID,
     user: Annotated[User, Depends(current_user)],

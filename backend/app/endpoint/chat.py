@@ -20,10 +20,16 @@ from starlette.background import BackgroundTask
 
 from app.agent.deps import AgentDeps
 from app.agent.factory import AgentFactory
-from app.api.deps import get_agent_factory, get_registry, get_run_manager, get_store, owned_conversation
-from app.auth.deps import current_user
-from app.config import settings
 from app.db import get_session
+from app.endpoint.deps import (
+    current_user,
+    get_agent_factory,
+    get_registry,
+    get_run_manager,
+    get_store,
+    owned_conversation,
+)
+from app.config import settings
 from app.models import Conversation, Run, User
 from app.runtime.runs import RunBusy, RunManager
 from app.runtime.sandboxes import SandboxRegistry, SandboxUnavailable
@@ -32,7 +38,7 @@ from app.store.conversations import PostgresConversationStore
 logger = logging.getLogger(__name__)
 _usage_adapter = TypeAdapter(RunUsage)
 
-router = APIRouter(prefix="/api", tags=["chat"])
+router = APIRouter(tags=["chat"])
 
 
 def _workspace_unavailable(error: BaseException) -> bool:

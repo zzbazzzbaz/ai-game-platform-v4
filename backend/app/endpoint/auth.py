@@ -4,12 +4,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from pydantic import BaseModel, EmailStr
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import current_user
-from app.auth.security import (
+from app.endpoint.deps import current_user
+from app.endpoint.schemas.auth import LoginRequest, UserOut
+from app.security import (
     hash_password,
     hash_token,
     new_session_token,
@@ -20,21 +20,7 @@ from app.config import settings
 from app.db import get_session
 from app.models import Session, User
 
-router = APIRouter(prefix="/api", tags=["auth"])
-
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class UserOut(BaseModel):
-    id: str
-    email: str
-
-    @classmethod
-    def from_user(cls, user: User) -> "UserOut":
-        return cls(id=str(user.id), email=user.email)
+router = APIRouter(tags=["auth"])
 
 
 async def _issue_session(session: AsyncSession, user: User, response: Response) -> None:

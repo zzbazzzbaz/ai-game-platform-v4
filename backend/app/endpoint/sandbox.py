@@ -10,13 +10,18 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from pydantic_ai.workspaces import WorkspaceError, WorkspaceUnavailableError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_registry, owned_conversation
-from app.auth.deps import current_user
 from app.db import get_session
+from app.endpoint.deps import current_user, get_registry, owned_conversation
+from app.endpoint.schemas.sandbox import (
+    FileEntryOut,
+    FileListOut,
+    PreviewOut,
+    UploadOut,
+)
 from app.models import User
 from app.runtime.sandboxes import SandboxRegistry, SandboxUnavailable
 
-router = APIRouter(prefix="/api", tags=["sandbox"])
+router = APIRouter(tags=["sandbox"])
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
 
@@ -29,18 +34,18 @@ def _safe_path(root: str, path: str) -> str:
     return candidate
 
 
-@router.get("/conversations/{conversation_id}/sandbox/files")
+@router.get("/conversations/{conversation_id}/sandbox/files", response_model=FileListOut)
 async def list_files(
     conversation_id: uuid.UUID,
     user: Annotated[User, Depends(current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
     path: str | None = Query(default=None),
-) -> dict[str, object]:
+) -> FileListOut:
     await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
-        return {"path": path or "", "entries": [], "sandbox": None}
+        return FileListOut(path=path or "")
     backend = registry.backend(handle)
     try:
         root = await backend.working_dir()
@@ -48,15 +53,15 @@ async def list_files(
         entries = await backend.list_dir(target)
     except (WorkspaceError, OSError) as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    return {
-        "root": root,
-        "path": target,
-        "sandbox": handle.sandbox_id,
-        "entries": [
-            {"name": entry.name, "path": entry.path, "is_dir": entry.is_dir, "size": entry.size}
+    return FileListOut(
+        root=root,
+        path=target,
+        sandbox=handle.sandbox_id,
+        entries=[
+            FileEntryOut(name=entry.name, path=entry.path, is_dir=entry.is_dir, size=entry.size)
             for entry in entries
         ],
-    }
+    )
 
 
 @router.get("/conversations/{conversation_id}/sandbox/file")
@@ -99,7 +104,7 @@ async def preview(
     user: Annotated[User, Depends(current_user)],
     session: Annotated[AsyncSession, Depends(get_session)],
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
-) -> dict[str, str]:
+) -> PreviewOut:
     await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
@@ -108,10 +113,10 @@ async def preview(
         url = await registry.preview_host(handle, port)
     except SandboxUnavailable as error:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)) from error
-    return {"url": url}
+    return PreviewOut(url=url)
 
 
-@router.post("/conversations/{conversation_id}/files", status_code=status.HTTP_201_CREATED)
+@router.post("/conversations/{conversation_id}/files", response_model=UploadOut, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     conversation_id: uuid.UUID,
     user: Annotated[User, Depends(current_user)],
@@ -119,7 +124,7 @@ async def upload_file(
     registry: Annotated[SandboxRegistry, Depends(get_registry)],
     file: UploadFile = File(...),
     path: str | None = Form(default=None),
-) -> dict[str, object]:
+) -> UploadOut:
     await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
     if handle is None:
@@ -135,4 +140,4 @@ async def upload_file(
         await backend.write_bytes(target, data)
     except (WorkspaceError, OSError, WorkspaceUnavailableError) as error:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=str(error)) from error
-    return {"path": target, "size": len(data)}
+    return UploadOut(path=target, size=len(data))

@@ -14,15 +14,14 @@ from pydantic_ai.models import infer_model
 from sqlalchemy import select, update
 
 from app.agent.factory import AgentFactory
-from app.api import chat, conversations, runs, sandbox
-from app.auth.router import router as auth_router
-from app.auth.security import hash_password
+from app.endpoint import api_router
 from app.config import settings
 from app.db import dispose_engine, session_factory
 from app.models import Run, User
 from app.runtime.reaper import SandboxReaper
 from app.runtime.runs import RunManager
 from app.runtime.sandboxes import SandboxRegistry, create_e2b_client
+from app.security import hash_password
 from app.store.conversations import PostgresConversationStore
 
 logging.basicConfig(level=logging.INFO)
@@ -110,11 +109,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(auth_router)
-app.include_router(conversations.router)
-app.include_router(chat.router)
-app.include_router(runs.router)
-app.include_router(sandbox.router)
+app.include_router(api_router)
 
 
 @app.get("/api/health")
