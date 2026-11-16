@@ -129,7 +129,7 @@ async def chat(
         await run_manager.finish(active)
 
     try:
-        handle = await registry.ensure(user.id, conversation_id)
+        handle = await registry.ensure(conversation_id)
 
         async def on_complete(result: AgentRunResult[Any]) -> None:
             active.result = result

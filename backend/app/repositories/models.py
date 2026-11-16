@@ -94,29 +94,15 @@ class SandboxSession(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
     conversation_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
     )
-    provider: Mapped[str] = mapped_column(Text, nullable=False, server_default="e2b")
     sandbox_id: Mapped[str] = mapped_column(Text, nullable=False)
-    template: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
-        CheckConstraint("status IN ('active', 'paused', 'dead')", name="sandbox_sessions_status_check"),
-        Index(
-            "sandbox_sessions_active_conversation_idx",
-            "conversation_id",
-            unique=True,
-            postgresql_where=text("status = 'active'"),
-        ),
-        Index("sandbox_sessions_user_last_used_idx", "user_id", text("last_used_at DESC")),
+        Index("sandbox_sessions_conversation_idx", "conversation_id", unique=True),
+        Index("sandbox_sessions_last_used_idx", "last_used_at"),
     )
 
 

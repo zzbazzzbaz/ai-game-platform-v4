@@ -40,7 +40,8 @@ pydantic-ai学习/
 │   ├── migrations/
 │   │   ├── env.py
 │   │   └── versions/
-│   │       └── 0001_init.py
+│   │       ├── 0001_init.py
+│   │       └── 0002_simplify_sandbox_sessions.py
 │   ├── app/
 │   │   ├── main.py
 │   │   ├── lifespan.py
@@ -76,7 +77,6 @@ pydantic-ai学习/
 │   │       ├── auth_service.py
 │   │       ├── chat_service.py
 │   │       ├── conversation_service.py
-│   │       ├── reaper.py
 │   │       ├── run_manager.py
 │   │       ├── run_service.py
 │   │       ├── sandbox_registry.py
@@ -89,6 +89,10 @@ pydantic-ai学习/
 │   │           └── capabilities/
 │   │               ├── permissions.py
 │   │               └── planning.py
+│   │   ├── job/
+│   │   │   ├── __init__.py
+│   │   │   ├── __main__.py
+│   │   │   └── reaper.py
 │   └── scripts/
 │       ├── spike_local_agent.py
 │       ├── spike_aliyun_sandbox.py
@@ -102,10 +106,11 @@ pydantic-ai学习/
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
 | 应用入口 | `app/main.py` | FastAPI 实例、CORS、路由挂载、健康检查 |
-| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run、reaper |
+| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run |
 | 依赖 | `app/dependencies.py` | 当前用户、服务实例与 FastAPI 依赖别名 |
 | 接入层 | `app/endpoints/` | HTTP 路由、SSE、请求解析、错误映射 |
-| 业务层 | `app/services/` | 认证、会话、聊天、沙箱、运行锁、空闲回收 |
+| 业务层 | `app/services/` | 认证、会话、聊天、沙箱、运行锁 |
+| 定时任务 | `app/job/` | APScheduler 沙箱回收；advisory lock 保证多进程只有一个实例执行 |
 | 数据访问 | `app/repositories/` | SQLAlchemy 模型、查询、`ConversationStore` |
 | 基础设施 | `app/database.py`、`app/security.py` | 数据库连接、密码与会话令牌 |
 | 通用 | `app/config.py`、`app/errors.py`、`app/dto/` | 配置、HTTP 错误构造、DTO |
@@ -150,7 +155,7 @@ sequenceDiagram
 2. `current_user` 从会话 Cookie 解析当前用户。
 3. `conversation_service.get_owned` 校验该 conversation 的 `user_id` 与当前用户一致。
 4. `RunManager`（`app/services/run_manager.py`）以 `conversation_id` 获取 Postgres advisory lock，并写入一条 `runs` 记录，状态为 `running`。
-5. `SandboxRegistry.ensure` 查找该 conversation 的 `active` 沙箱；存在则复用，不存在则创建并写入 `sandbox_sessions`。
+5. `SandboxRegistry.ensure` 查找该 conversation 的沙箱记录；存在则复用，不存在则创建并写入 `sandbox_sessions`。
 6. `AgentFactory.build` 使用当前 conversation 的依赖构建 Agent。模型实例在应用启动时创建，由所有 run 复用。
 7. `VercelAIAdapter.from_request` 解析请求，`run_stream` 以 `conversation_store` 加载历史、执行 Agent，`streaming_response` 编码 SSE，并在结束后保存历史。
 8. `on_complete` 更新 `runs` 的状态、用量和结束时间，并更新 `sandbox_sessions.last_used_at`。
@@ -245,20 +250,18 @@ agent = Agent(
 
 | 字段 | 说明 |
 | --- | --- |
-| `provider` | 固定为 `e2b` |
+| `id` | 记录 ID |
+| `conversation_id` | 所属会话，唯一 |
 | `sandbox_id` | 阿里云沙箱 ID |
-| `template` | 创建时使用的模板 |
-| `status` | `active` / `dead` |
 | `last_used_at` | 最近一次使用时间 |
-| `expires_at` | 过期时间 |
 
 `SandboxRegistry` 实现在 `app/services/sandbox_registry.py`。行为：
 
-1. 查询 `sandbox_sessions` 中该 conversation 的 `active` 记录。
+1. 查询 `sandbox_sessions` 中该 conversation 的记录。
 2. 存在时更新 `last_used_at`，返回 `WorkspaceRef(provider='e2b', id=sandbox_id)`。
 3. 不存在时通过 `e2b.E2B` 客户端创建沙箱，写入 `sandbox_sessions`，再返回引用。
 4. 运行结束或复用时更新 `last_used_at`。
-5. 沙箱不可用时把记录标记为 `dead`，下一次 run 重新创建。
+5. 沙箱不可用时删除映射，下一次 run 重新创建。
 
 `e2b.E2B` 客户端的连接参数来自环境变量：
 
@@ -271,7 +274,7 @@ agent = Agent(
 
 `E2B_TEMPLATE` 为空时使用阿里云默认模板。默认模板包含 Python 3.13、git、Node 20，不包含 `rg`；`Coder` 在缺少 `rg` 时使用 POSIX 搜索。
 
-回收器实现在 `app/services/reaper.py`。`reaper` 每 5 分钟扫描一次 `sandbox_sessions`，对 `last_used_at` 超过 30 分钟且没有运行中 run 的 `active` 沙箱执行 `kill`，并标记为 `dead`。
+回收器实现在 `app/job/reaper.py`，由 APScheduler 每 5 分钟执行一次。任务开始前先获取 PostgreSQL advisory lock，只有拿到锁的进程才扫描 `sandbox_sessions`；对 `last_used_at` 超过 30 分钟且没有运行中 run 的沙箱执行 `kill`，并删除记录。
 
 预览与文件接口：
 
@@ -353,7 +356,7 @@ HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包�
 | `cancelled` | 用户取消 |
 | `failed` | 执行失败 |
 
-`WorkspaceUnavailableError`：沙箱不可用。后端把 `sandbox_sessions.status` 置为 `dead`，下一次 run 重新创建沙箱。
+`WorkspaceUnavailableError`：沙箱不可用。后端删除 `sandbox_sessions` 中的映射，下一次 run 重新创建沙箱。
 
 `ConversationConflict`：同一 conversation 被并发保存。适配器把冲突转成 SSE error 事件，`runs.status` 记为 `failed`。
 
@@ -386,6 +389,13 @@ cd backend
 uv sync
 uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
+```
+
+沙箱回收任务作为独立进程运行：
+
+```bash
+cd backend
+uv run python -m app.job
 ```
 
 `uv` 使用根目录的 `.python-version`（3.14），虚拟环境位于 `backend/.venv`。

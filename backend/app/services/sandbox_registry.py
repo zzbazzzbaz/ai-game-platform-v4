@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import e2b
 from pydantic_ai.workspaces import WorkspaceRef
 from pydantic_ai_harness.e2b_sandbox import E2BSandboxBackend
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -21,9 +21,7 @@ class SandboxUnavailable(RuntimeError):
 
 @dataclass(frozen=True)
 class SandboxHandle:
-    id: uuid.UUID
     sandbox_id: str
-    template: str
 
     @property
     def ref(self) -> WorkspaceRef:
@@ -45,17 +43,14 @@ class SandboxRegistry:
         self._client = client
         self._sessions = session_factory
 
-    async def ensure(self, user_id: uuid.UUID, conversation_id: uuid.UUID) -> SandboxHandle:
+    async def ensure(self, conversation_id: uuid.UUID) -> SandboxHandle:
         async with self._sessions() as session:
             row = await session.scalar(
-                select(SandboxSession).where(
-                    SandboxSession.conversation_id == conversation_id,
-                    SandboxSession.status == "active",
-                )
+                select(SandboxSession).where(SandboxSession.conversation_id == conversation_id)
             )
         if row is not None:
             await self.touch(row.sandbox_id)
-            return SandboxHandle(id=row.id, sandbox_id=row.sandbox_id, template=row.template)
+            return SandboxHandle(row.sandbox_id)
 
         template = settings.e2b_template or None
         try:
@@ -67,19 +62,14 @@ class SandboxRegistry:
         except Exception as error:  # 统一转成 503
             raise SandboxUnavailable(f"创建沙箱失败：{error}") from error
 
-        expires_at = datetime.now(UTC) + timedelta(seconds=settings.sandbox_timeout)
         async with self._sessions() as session:
-            record = SandboxSession(
-                user_id=user_id,
-                conversation_id=conversation_id,
-                provider="e2b",
-                sandbox_id=sandbox.sandbox_id,
-                template=template or "",
-                status="active",
-                last_used_at=datetime.now(UTC),
-                expires_at=expires_at,
+            session.add(
+                SandboxSession(
+                    conversation_id=conversation_id,
+                    sandbox_id=sandbox.sandbox_id,
+                    last_used_at=datetime.now(UTC),
+                )
             )
-            session.add(record)
             try:
                 await session.commit()
             except IntegrityError:
@@ -88,55 +78,42 @@ class SandboxRegistry:
                 await self._kill_quietly(sandbox.sandbox_id)
                 existing = await session.scalar(
                     select(SandboxSession).where(
-                        SandboxSession.conversation_id == conversation_id,
-                        SandboxSession.status == "active",
+                        SandboxSession.conversation_id == conversation_id
                     )
                 )
                 if existing is None:
                     raise SandboxUnavailable("沙箱登记冲突。") from None
-                return SandboxHandle(
-                    id=existing.id, sandbox_id=existing.sandbox_id, template=existing.template
-                )
-            await session.refresh(record)
-        return SandboxHandle(id=record.id, sandbox_id=record.sandbox_id, template=record.template)
+                return SandboxHandle(existing.sandbox_id)
+        return SandboxHandle(sandbox.sandbox_id)
 
     async def touch(self, sandbox_id: str) -> None:
         async with self._sessions() as session:
             await session.execute(
                 update(SandboxSession)
-                .where(SandboxSession.sandbox_id == sandbox_id, SandboxSession.status == "active")
+                .where(SandboxSession.sandbox_id == sandbox_id)
                 .values(last_used_at=datetime.now(UTC))
             )
             await session.commit()
 
     async def mark_dead(self, sandbox_id: str) -> None:
+        """删除映射，下一次 run 重新创建沙箱。"""
         async with self._sessions() as session:
             await session.execute(
-                update(SandboxSession).where(SandboxSession.sandbox_id == sandbox_id).values(status="dead")
+                delete(SandboxSession).where(SandboxSession.sandbox_id == sandbox_id)
             )
             await session.commit()
 
     async def active_handle(self, conversation_id: uuid.UUID) -> SandboxHandle | None:
         async with self._sessions() as session:
             row = await session.scalar(
-                select(SandboxSession).where(
-                    SandboxSession.conversation_id == conversation_id,
-                    SandboxSession.status == "active",
-                )
+                select(SandboxSession).where(SandboxSession.conversation_id == conversation_id)
             )
         if row is None:
             return None
-        return SandboxHandle(id=row.id, sandbox_id=row.sandbox_id, template=row.template)
+        return SandboxHandle(row.sandbox_id)
 
     def backend(self, handle: SandboxHandle) -> E2BSandboxBackend:
-        return E2BSandboxBackend(
-            client=self._client,
-            ref=handle.ref,
-            template=handle.template or None,
-        )
-
-    async def kill(self, handle: SandboxHandle) -> None:
-        await self._kill_quietly(handle.sandbox_id)
+        return E2BSandboxBackend(client=self._client, ref=handle.ref)
 
     async def kill_checked(self, sandbox_id: str) -> None:
         """回收时使用：让调用方知道失败，保留记录下次重试。"""

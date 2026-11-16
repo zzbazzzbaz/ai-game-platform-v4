@@ -25,7 +25,7 @@ erDiagram
   users ||--o{ runs : "发起"
 
   conversations ||--o{ conversation_entries : "包含"
-  conversations ||--o{ sandbox_sessions : "使用"
+  conversations ||--o| sandbox_sessions : "使用"
   conversations ||--o{ runs : "产生"
 
   conversation_entries ||--o{ conversation_entries : "parent"
@@ -140,41 +140,26 @@ CREATE INDEX conversation_entries_parent_idx
 ```sql
 CREATE TABLE sandbox_sessions (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id         uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    provider        text NOT NULL DEFAULT 'e2b',
     sandbox_id      text NOT NULL,
-    template        text NOT NULL,
-    status          text NOT NULL DEFAULT 'active',
-    created_at      timestamptz NOT NULL DEFAULT now(),
-    last_used_at    timestamptz NOT NULL DEFAULT now(),
-    expires_at      timestamptz,
-    CONSTRAINT sandbox_sessions_status_check
-        CHECK (status IN ('active', 'paused', 'dead'))
+    last_used_at    timestamptz NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX sandbox_sessions_active_conversation_idx
-    ON sandbox_sessions (conversation_id)
-    WHERE status = 'active';
+CREATE UNIQUE INDEX sandbox_sessions_conversation_idx
+    ON sandbox_sessions (conversation_id);
 
-CREATE INDEX sandbox_sessions_user_last_used_idx
-    ON sandbox_sessions (user_id, last_used_at DESC);
+CREATE INDEX sandbox_sessions_last_used_idx
+    ON sandbox_sessions (last_used_at);
 ```
 
 | 字段 | 说明 |
 | --- | --- |
 | `id` | 记录 ID |
-| `user_id` | 所属用户 |
 | `conversation_id` | 所属会话 |
-| `provider` | 沙箱提供方，固定为 `e2b` |
 | `sandbox_id` | 阿里云沙箱实例 ID |
-| `template` | 创建沙箱使用的模板 |
-| `status` | `active` / `paused` / `dead` |
-| `created_at` | 创建时间 |
 | `last_used_at` | 最近一次使用时间 |
-| `expires_at` | 过期时间 |
 
-每个 conversation 同时只有一条 `active` 记录，由部分唯一索引保证。
+每个 conversation 最多一条记录，由唯一索引保证。
 
 ### 3.6 runs
 
@@ -248,6 +233,7 @@ CREATE INDEX runs_user_status_idx
 | `conversation_entries` | `parent_id` → `conversation_entries.id` | `CASCADE` |
 | `sandbox_sessions` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `runs` | `conversation_id` → `conversations.id` | `CASCADE` |
+| `runs` | `user_id` → `users.id` | `CASCADE` |
 | `runs` | `parent_run_id` → `runs.id` | `SET NULL` |
 
 删除 conversation 会删除其 entries、sandbox 记录与 runs。删除用户会删除其 sessions、conversations 与 runs。
@@ -272,5 +258,6 @@ CREATE INDEX runs_user_status_idx
 ## 7. 迁移
 
 - 初始迁移：`backend/migrations/versions/0001_init.py`。
+- `sandbox_sessions` 精简迁移：`backend/migrations/versions/0002_simplify_sandbox_sessions.py`。
 - 迁移命令：在 `backend/` 下执行 `uv run alembic upgrade head`。
 - `users`、`sessions`、`conversations`、`conversation_entries`、`sandbox_sessions`、`runs` 由 Alembic 创建。

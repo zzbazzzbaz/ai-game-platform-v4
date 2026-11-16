@@ -80,23 +80,16 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 | 列 | 类型 | 约束 |
 | --- | --- | --- |
 | `id` | `uuid` | 主键，`gen_random_uuid()` |
-| `user_id` | `uuid` | 非空，外键 `users.id`，级联删除 |
 | `conversation_id` | `uuid` | 非空，外键 `conversations.id`，级联删除 |
-| `provider` | `text` | 非空，默认 `e2b` |
 | `sandbox_id` | `text` | 非空 |
-| `template` | `text` | 非空 |
-| `status` | `text` | 非空，默认 `active`，取值 `active` / `paused` / `dead` |
-| `created_at` | `timestamptz` | 非空，`now()` |
 | `last_used_at` | `timestamptz` | 非空，`now()` |
-| `expires_at` | `timestamptz` | 可空 |
 
-索引与约束：
+索引：
 
-- `sandbox_sessions_status_check`：`status IN ('active', 'paused', 'dead')`
-- `sandbox_sessions_active_conversation_idx`：`(conversation_id)`，`WHERE status = 'active'`，唯一
-- `sandbox_sessions_user_last_used_idx (user_id, last_used_at DESC)`
+- `sandbox_sessions_conversation_idx`：`(conversation_id)`，唯一
+- `sandbox_sessions_last_used_idx`：`(last_used_at)`
 
-同一个 conversation 同时最多一条 `active` 记录。
+每个 conversation 最多一条记录。
 
 ## runs
 
@@ -135,7 +128,6 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 | `conversations` | `user_id` → `users.id` | `CASCADE` |
 | `conversation_entries` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `conversation_entries` | `parent_id` → `conversation_entries.id` | `CASCADE` |
-| `sandbox_sessions` | `user_id` → `users.id` | `CASCADE` |
 | `sandbox_sessions` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `runs` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `runs` | `user_id` → `users.id` | `CASCADE` |
