@@ -30,6 +30,7 @@ class Settings(BaseSettings):
     e2b_template: str
 
     logfire_token: str
+    logfire_environment: str
 
     sandbox_timeout: int
     sandbox_idle_seconds: int

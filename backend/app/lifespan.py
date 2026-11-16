@@ -25,9 +25,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if settings.logfire_token:
-        logfire.configure(token=settings.logfire_token)
+        logfire.configure(
+            token=settings.logfire_token,
+            environment=settings.logfire_environment,
+        )
     else:
-        logfire.configure(send_to_logfire=False)
+        logfire.configure(
+            send_to_logfire=False,
+            environment=settings.logfire_environment,
+        )
     logfire.instrument_pydantic_ai()
 
     e2b_client = create_e2b_client()

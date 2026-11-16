@@ -396,6 +396,7 @@ HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包�
 | `E2B_DOMAIN` | `<region>.sandbox.aliyuncs.com` |
 | `E2B_TEMPLATE` | 沙箱模板名称；为空时使用默认模板 |
 | `LOGFIRE_TOKEN` | Logfire 写入 Token，可为空 |
+| `LOGFIRE_ENVIRONMENT` | Logfire 环境名，`.env` 中为 `development` |
 | `SANDBOX_TIMEOUT` | 沙箱生命周期秒数，`.env` 中为 `3600` |
 | `SANDBOX_IDLE_SECONDS` | 空闲回收阈值秒数，`.env` 中为 `1800` |
 
