@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     logfire_environment: str
 
     sandbox_timeout: int
-    sandbox_idle_seconds: int
 
 
 settings = Settings()

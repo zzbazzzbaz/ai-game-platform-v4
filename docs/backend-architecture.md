@@ -95,8 +95,7 @@ pydantic-ai学习/
 │   │   │       ├── __init__.py
 │   │   │       ├── registry.py
 │   │   │       ├── files.py
-│   │   │       ├── errors.py
-│   │   │       └── reaper.py
+│   │   │       └── errors.py
 │   │   └── services/
 │   │       ├── __init__.py
 │   │       ├── auth_service.py
@@ -115,11 +114,11 @@ pydantic-ai学习/
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
 | 应用入口 | `app/main.py` | FastAPI 实例、CORS、路由挂载、健康检查 |
-| 生命周期 | `app/lifespan.py` | Logfire、运行时实例、遗留 run、APScheduler 启动与关闭 |
+| 生命周期 | `app/lifespan.py` | Logfire、运行时实例、遗留 run 清理 |
 | 依赖 | `app/dependencies.py` | 当前用户、运行时实例与 FastAPI 依赖别名 |
 | 接入层 | `app/endpoints/` | HTTP 路由、SSE、请求解析、错误映射 |
 | 业务层 | `app/services/` | 认证、会话元数据、run 查询 |
-| 运行时 | `app/runtime/` | Agent 组装、run 生命周期、HITL、沙箱、流式执行、空闲回收 |
+| 运行时 | `app/runtime/` | Agent 组装、run 生命周期、HITL、沙箱、流式执行 |
 | 数据访问 | `app/repositories/` | SQLAlchemy 模型、查询、`ConversationStore` |
 | 基础设施 | `app/database.py`、`app/security.py` | 数据库连接、密码与会话令牌 |
 | 通用 | `app/config.py`、`app/errors.py`、`app/dto/` | 配置、HTTP 错误构造、DTO |
@@ -127,7 +126,7 @@ pydantic-ai学习/
 运行时边界：
 
 - `app/runtime/` 不导入 `app/services/` 或 `app/endpoints/`。
-- Agent 组装、run 生命周期、HITL、沙箱、流式执行、空闲回收都在 `app/runtime/`。
+- Agent 组装、run 生命周期、HITL、沙箱、流式执行都在 `app/runtime/`。
 - `app/services/` 只保留认证、会话元数据、run 查询等业务逻辑。
 - `app/repositories/` 只负责持久化，不感知 Agent 运行时。
 - `PostgresConversationStore` 是持久化适配器，留在 `app/repositories/`。
@@ -290,8 +289,6 @@ agent = Agent(
 
 `E2B_TEMPLATE` 为空时使用阿里云默认模板。默认模板包含 Python 3.13、git、Node 20，不包含 `rg`；`Coder` 在缺少 `rg` 时使用 POSIX 搜索。
 
-回收器实现在 `app/runtime/sandboxes/reaper.py`，由 `app/lifespan.py` 注册到 APScheduler，每 5 分钟执行一次。任务开始前先获取 PostgreSQL advisory lock，只有拿到锁的进程才扫描 `sandbox_sessions`；对 `last_used_at` 超过 30 分钟且没有运行中 run 的沙箱执行 `kill`，并删除记录。
-
 预览与文件接口：
 
 | 接口 | 行为 |
@@ -397,8 +394,7 @@ HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包�
 | `E2B_TEMPLATE` | 沙箱模板名称；为空时使用默认模板 |
 | `LOGFIRE_TOKEN` | Logfire 写入 Token，可为空 |
 | `LOGFIRE_ENVIRONMENT` | Logfire 环境名，`.env` 中为 `development` |
-| `SANDBOX_TIMEOUT` | 沙箱生命周期秒数，`.env` 中为 `3600` |
-| `SANDBOX_IDLE_SECONDS` | 空闲回收阈值秒数，`.env` 中为 `1800` |
+| `SANDBOX_TIMEOUT` | 沙箱生命周期与续签秒数，`.env` 中为 `600` |
 
 ## 11. 启动
 
@@ -429,10 +425,6 @@ make run-ui
 
 ```bash
 make build   # 前端生产构建
-make check   # ruff、ty、前端类型检查
-make smoke   # 真实模型 + 沙箱 smoke，需先启动后端
 ```
-
-沙箱回收任务由应用 lifespan 内的 APScheduler 启动，不需要单独进程。
 
 `uv` 使用根目录的 `.python-version`（3.14），虚拟环境位于 `backend/.venv`。

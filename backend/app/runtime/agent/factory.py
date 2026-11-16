@@ -22,7 +22,7 @@ class AgentFactory:
         *,
         e2b_client: e2b.E2B | None = None,
         template: str | None = None,
-        sandbox_timeout: int = 3600,
+        sandbox_timeout: int = 600,
     ) -> None:
         self._model = model
         self._e2b_client = e2b_client

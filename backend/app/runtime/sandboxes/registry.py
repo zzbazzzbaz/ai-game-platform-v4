@@ -54,7 +54,7 @@ class SandboxRegistry:
             sandbox = await self._client.AsyncSandbox.create(
                 template=template,
                 timeout=settings.sandbox_timeout,
-                lifecycle={"on_timeout": "pause"},
+                lifecycle={"on_timeout": "pause", "auto_resume": True},
             )
         except Exception as error:  # 统一转成 503
             raise SandboxUnavailable(f"创建沙箱失败：{error}") from error
@@ -118,7 +118,10 @@ class SandboxRegistry:
 
     async def preview_host(self, handle: SandboxHandle, port: int) -> str:
         try:
-            sandbox = await self._client.AsyncSandbox.connect(handle.sandbox_id)
+            sandbox = await self._client.AsyncSandbox.connect(
+                handle.sandbox_id,
+                timeout=settings.sandbox_timeout,
+            )
             host = sandbox.get_host(port)
         except Exception as error:  # 统一转成 503
             raise SandboxUnavailable(f"获取预览地址失败：{error}") from error
