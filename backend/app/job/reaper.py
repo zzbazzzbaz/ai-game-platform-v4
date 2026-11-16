@@ -1,16 +1,13 @@
 from __future__ import annotations
 
-import asyncio
 import logging
-import signal
 from datetime import UTC, datetime, timedelta
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
-from app.database import dispose_engine, lock_engine, session_factory
+from app.database import lock_engine, session_factory
 from app.repositories.models import Run, SandboxSession
 from app.services.sandbox_registry import SandboxRegistry, create_e2b_client
 
@@ -18,14 +15,13 @@ logger = logging.getLogger(__name__)
 
 SCAN_INTERVAL_SECONDS = 300
 
-# 与 RunManager 的单 key advisory lock 使用不同的锁空间。
 REAPER_LOCK_CLASS_ID = 0x52455052  # "REPR"
 REAPER_LOCK_OBJECT_ID = 1
 
 
 async def sweep(
-    registry: SandboxRegistry,
-    sessions: async_sessionmaker[AsyncSession],
+        registry: SandboxRegistry,
+        sessions: async_sessionmaker[AsyncSession],
 ) -> int:
     """回收长时间空闲且没有运行中 run 的沙箱。"""
     cutoff = datetime.now(UTC) - timedelta(seconds=settings.sandbox_idle_seconds)
@@ -49,9 +45,7 @@ async def sweep(
             continue
 
         async with sessions() as session:
-            await session.execute(
-                delete(SandboxSession).where(SandboxSession.id == row.id)
-            )
+            await session.execute(delete(SandboxSession).where(SandboxSession.id == row.id))
             await session.commit()
         reclaimed += 1
     return reclaimed
@@ -82,36 +76,3 @@ async def run_reaper() -> int:
                 text("SELECT pg_advisory_unlock(:class_id, :object_id)"),
                 {"class_id": REAPER_LOCK_CLASS_ID, "object_id": REAPER_LOCK_OBJECT_ID},
             )
-
-
-async def main() -> None:
-    scheduler = AsyncIOScheduler(timezone="UTC")
-    scheduler.add_job(
-        run_reaper,
-        "interval",
-        seconds=SCAN_INTERVAL_SECONDS,
-        id="sandbox-reaper",
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=60,
-        replace_existing=True,
-        next_run_time=datetime.now(UTC),
-    )
-    scheduler.start()
-    logger.info("沙箱回收任务已启动，间隔 %s 秒", SCAN_INTERVAL_SECONDS)
-
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, stop.set)
-
-    try:
-        await stop.wait()
-    finally:
-        scheduler.shutdown(wait=False)
-        await dispose_engine()
-
-
-if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
-    asyncio.run(main())

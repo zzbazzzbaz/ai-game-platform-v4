@@ -91,7 +91,6 @@ pydantic-ai学习/
 │   │               └── planning.py
 │   │   ├── job/
 │   │   │   ├── __init__.py
-│   │   │   ├── __main__.py
 │   │   │   └── reaper.py
 │   └── scripts/
 │       ├── spike_local_agent.py
@@ -106,11 +105,11 @@ pydantic-ai学习/
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
 | 应用入口 | `app/main.py` | FastAPI 实例、CORS、路由挂载、健康检查 |
-| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run |
+| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run、APScheduler 启动与关闭 |
 | 依赖 | `app/dependencies.py` | 当前用户、服务实例与 FastAPI 依赖别名 |
 | 接入层 | `app/endpoints/` | HTTP 路由、SSE、请求解析、错误映射 |
 | 业务层 | `app/services/` | 认证、会话、聊天、沙箱、运行锁 |
-| 定时任务 | `app/job/` | APScheduler 沙箱回收；advisory lock 保证多进程只有一个实例执行 |
+| 定时任务 | `app/job/` | 沙箱回收任务定义；由 lifespan 注册到 APScheduler，advisory lock 保证多进程只有一个实例执行 |
 | 数据访问 | `app/repositories/` | SQLAlchemy 模型、查询、`ConversationStore` |
 | 基础设施 | `app/database.py`、`app/security.py` | 数据库连接、密码与会话令牌 |
 | 通用 | `app/config.py`、`app/errors.py`、`app/dto/` | 配置、HTTP 错误构造、DTO |
@@ -274,7 +273,7 @@ agent = Agent(
 
 `E2B_TEMPLATE` 为空时使用阿里云默认模板。默认模板包含 Python 3.13、git、Node 20，不包含 `rg`；`Coder` 在缺少 `rg` 时使用 POSIX 搜索。
 
-回收器实现在 `app/job/reaper.py`，由 APScheduler 每 5 分钟执行一次。任务开始前先获取 PostgreSQL advisory lock，只有拿到锁的进程才扫描 `sandbox_sessions`；对 `last_used_at` 超过 30 分钟且没有运行中 run 的沙箱执行 `kill`，并删除记录。
+回收器实现在 `app/job/reaper.py`，由 `app/lifespan.py` 注册到 APScheduler，每 5 分钟执行一次。任务开始前先获取 PostgreSQL advisory lock，只有拿到锁的进程才扫描 `sandbox_sessions`；对 `last_used_at` 超过 30 分钟且没有运行中 run 的沙箱执行 `kill`，并删除记录。
 
 预览与文件接口：
 
@@ -391,12 +390,7 @@ uv run alembic upgrade head
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-沙箱回收任务作为独立进程运行：
-
-```bash
-cd backend
-uv run python -m app.job
-```
+沙箱回收任务由应用 lifespan 内的 APScheduler 启动，不需要单独进程。
 
 `uv` 使用根目录的 `.python-version`（3.14），虚拟环境位于 `backend/.venv`。
 

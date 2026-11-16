@@ -4,13 +4,16 @@ import logging
 import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import logfire
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 from pydantic_ai.models import infer_model
 
 from app.config import settings
 from app.database import dispose_engine, session_factory
+from app.job.reaper import SCAN_INTERVAL_SECONDS, run_reaper
 from app.repositories.conversation_store import PostgresConversationStore
 from app.services import run_service
 from app.services.agent.factory import AgentFactory
@@ -51,7 +54,23 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if stale:
         logger.info("已标记 %s 条遗留的 running 记录为 failed", stale)
 
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(
+        run_reaper,
+        "interval",
+        seconds=SCAN_INTERVAL_SECONDS,
+        id="sandbox-reaper",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
+        replace_existing=True,
+        next_run_time=datetime.now(UTC),
+    )
+    scheduler.start()
+    logger.info("沙箱回收任务已启动，间隔 %s 秒", SCAN_INTERVAL_SECONDS)
+
     try:
         yield
     finally:
+        scheduler.shutdown(wait=False)
         await dispose_engine()
