@@ -142,7 +142,7 @@ sequenceDiagram
 | `PlanPanel` | 解析 `Planning` 工具结果并渲染任务清单 |
 | `FileTree` | 请求并展示沙箱目录 |
 | `FileViewer` | 展示沙箱文件内容 |
-| `PreviewPane` | 以 iframe 展示沙箱端口预览 |
+| `PreviewPane` | 以 iframe 展示沙箱端口预览；打开后每 240 秒调用 `POST /api/conversations/{id}/sandbox/touch` 续签 |
 
 ## 6. 消息渲染
 
@@ -214,6 +214,7 @@ sequenceDiagram
 | `GET` | `/api/conversations/{id}/sandbox/files?path=` | 沙箱目录 |
 | `GET` | `/api/conversations/{id}/sandbox/file?path=` | 沙箱文件内容 |
 | `GET` | `/api/conversations/{id}/sandbox/preview/{port}` | 沙箱端口预览地址 |
+| `POST` | `/api/conversations/{id}/sandbox/touch` | 预览页心跳，续签 600 秒 |
 | `POST` | `/api/conversations/{id}/files` | 上传文件到沙箱 |
 
 错误处理：
