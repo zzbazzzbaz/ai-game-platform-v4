@@ -1,3 +1,6 @@
+# 沿用旧 Compose 项目名，保留本地数据库卷
+name: pydantic-ai
+
 services:
   db:
     image: postgres:17.11
