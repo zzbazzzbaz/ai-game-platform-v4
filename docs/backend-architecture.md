@@ -87,7 +87,6 @@ pydantic-ai学习/
 │   │           ├── deps.py
 │   │           ├── instructions.py
 │   │           └── capabilities/
-│   │               ├── workspace.py
 │   │               ├── permissions.py
 │   │               └── planning.py
 │   └── scripts/
@@ -185,7 +184,7 @@ sequenceDiagram
 
 | Capability | 作用 |
 | --- | --- |
-| `ConversationWorkspace` | 从 `AgentDeps.sandbox_ref` 解析工作区；沙箱由 `SandboxRegistry` 在 run 前创建并登记 |
+| `E2BSandbox` | harness 内置的 E2B 工作区 capability；run 时通过 `workspace=WorkspaceRef(...)` 附着到 `SandboxRegistry` 登记的沙箱 |
 | `Coder` | 文件读写、编辑、列目录、grep、shell、子任务委派、上下文清理与工具结果截断 |
 | `Permissions` | 依据 `AgentDeps.approval_mode` 生成审批请求 |
 | `Planning` | 计划工具；按 conversation 使用进程内存储 |
@@ -196,7 +195,6 @@ sequenceDiagram
 | --- | --- | --- |
 | `user_id` | `UUID` | 当前用户 |
 | `conversation_id` | `str` | 当前会话 |
-| `sandbox_ref` | `WorkspaceRef` | 当前会话的沙箱引用 |
 | `approval_mode` | `Literal['full', 'auto', 'read-only']` | 审批模式 |
 
 组装代码位于 `app/services/agent/factory.py`：
@@ -206,7 +204,7 @@ agent = Agent(
     model,
     deps_type=AgentDeps,
     capabilities=[
-        ConversationWorkspace(),
+        E2BSandbox(client=..., template=..., sandbox_timeout=...),
         Coder(),
         Permissions(lambda ctx: ctx.deps.approval_mode),
         Planning(),

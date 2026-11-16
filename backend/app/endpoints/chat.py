@@ -144,9 +144,9 @@ async def chat(
             deps=AgentDeps(
                 user_id=user.id,
                 conversation_id=str(conversation_id),
-                sandbox_ref=handle.ref,
                 approval_mode="auto",
             ),
+            workspace=handle.ref,
             deferred_tool_results=deferred_results,
             on_complete=on_complete,
             on_cancel=on_cancel,

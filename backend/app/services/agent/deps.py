@@ -4,8 +4,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic_ai.workspaces import WorkspaceRef
-
 ApprovalMode = Literal["full", "auto", "read-only"]
 
 
@@ -15,5 +13,4 @@ class AgentDeps:
 
     user_id: uuid.UUID
     conversation_id: str
-    sandbox_ref: WorkspaceRef
     approval_mode: ApprovalMode = "auto"
