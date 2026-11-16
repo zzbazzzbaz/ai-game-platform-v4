@@ -3,7 +3,7 @@ from __future__ import annotations
 from pydantic_ai import RunContext
 from pydantic_ai_harness.planning import InMemoryPlanStore, Planning
 
-from app.services.agent.deps import AgentDeps
+from app.runtime.agent.deps import AgentDeps
 
 _stores: dict[str, InMemoryPlanStore] = {}
 

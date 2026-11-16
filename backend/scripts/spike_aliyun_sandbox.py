@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import settings
-from app.services.sandbox_registry import create_e2b_client
+from app.runtime.sandboxes.registry import create_e2b_client
 
 
 async def main() -> None:

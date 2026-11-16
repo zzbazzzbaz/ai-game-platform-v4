@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.config import settings
 from app.database import lock_engine, session_factory
 from app.repositories.models import Run, SandboxSession
-from app.services.sandbox_registry import SandboxRegistry, create_e2b_client
+from app.runtime.sandboxes.registry import SandboxRegistry, create_e2b_client
 
 logger = logging.getLogger(__name__)
 

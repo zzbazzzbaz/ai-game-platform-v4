@@ -11,11 +11,11 @@ from app.database import get_session
 from app.errors import unauthorized
 from app.repositories.conversation_store import PostgresConversationStore
 from app.repositories.models import User
+from app.runtime.agent.factory import AgentFactory
+from app.runtime.runs.manager import RunManager
+from app.runtime.sandboxes.registry import SandboxRegistry
 from app.security import token_from_cookie
 from app.services import auth_service
-from app.services.agent.factory import AgentFactory
-from app.services.run_manager import RunManager
-from app.services.sandbox_registry import SandboxRegistry
 
 logger = logging.getLogger(__name__)
 

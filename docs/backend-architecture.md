@@ -72,27 +72,34 @@ pydantic-ai学习/
 │   │   │   ├── conversations.py
 │   │   │   ├── runs.py
 │   │   │   └── users.py
+│   │   ├── runtime/
+│   │   │   ├── __init__.py
+│   │   │   ├── agent/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── factory.py
+│   │   │   │   ├── model.py
+│   │   │   │   ├── deps.py
+│   │   │   │   ├── instructions.py
+│   │   │   │   └── capabilities/
+│   │   │   │       ├── permissions.py
+│   │   │   │       └── planning.py
+│   │   │   ├── runs/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── manager.py
+│   │   │   │   ├── lifecycle.py
+│   │   │   │   ├── hitl.py
+│   │   │   │   └── stream.py
+│   │   │   └── sandboxes/
+│   │   │       ├── __init__.py
+│   │   │       ├── registry.py
+│   │   │       ├── files.py
+│   │   │       ├── errors.py
+│   │   │       └── reaper.py
 │   │   └── services/
 │   │       ├── __init__.py
 │   │       ├── auth_service.py
-│   │       ├── chat_service.py
 │   │       ├── conversation_service.py
-│   │       ├── run_manager.py
-│   │       ├── run_service.py
-│   │       ├── sandbox_registry.py
-│   │       ├── sandbox_service.py
-│   │       └── agent/
-│   │           ├── __init__.py
-│   │           ├── factory.py
-│   │           ├── model.py
-│   │           ├── deps.py
-│   │           ├── instructions.py
-│   │           └── capabilities/
-│   │               ├── permissions.py
-│   │               └── planning.py
-│   │   ├── job/
-│   │   │   ├── __init__.py
-│   │   │   └── reaper.py
+│   │       └── run_service.py
 │   └── scripts/
 │       ├── spike_local_agent.py
 │       ├── spike_aliyun_sandbox.py
@@ -106,15 +113,22 @@ pydantic-ai学习/
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
 | 应用入口 | `app/main.py` | FastAPI 实例、CORS、路由挂载、健康检查 |
-| 生命周期 | `app/lifespan.py` | Logfire、服务实例、遗留 run、APScheduler 启动与关闭 |
-| 依赖 | `app/dependencies.py` | 当前用户、服务实例与 FastAPI 依赖别名 |
+| 生命周期 | `app/lifespan.py` | Logfire、运行时实例、遗留 run、APScheduler 启动与关闭 |
+| 依赖 | `app/dependencies.py` | 当前用户、运行时实例与 FastAPI 依赖别名 |
 | 接入层 | `app/endpoints/` | HTTP 路由、SSE、请求解析、错误映射 |
-| 业务层 | `app/services/` | 认证、会话、聊天、沙箱、运行锁 |
-| 定时任务 | `app/job/` | 沙箱回收任务定义；由 lifespan 注册到 APScheduler，advisory lock 保证多进程只有一个实例执行 |
+| 业务层 | `app/services/` | 认证、会话元数据、run 查询 |
+| 运行时 | `app/runtime/` | Agent 组装、run 生命周期、HITL、沙箱、流式执行、空闲回收 |
 | 数据访问 | `app/repositories/` | SQLAlchemy 模型、查询、`ConversationStore` |
 | 基础设施 | `app/database.py`、`app/security.py` | 数据库连接、密码与会话令牌 |
 | 通用 | `app/config.py`、`app/errors.py`、`app/dto/` | 配置、HTTP 错误构造、DTO |
-| Agent | `app/services/agent/` | 模型、指令、依赖、capability 组装 |
+
+运行时边界：
+
+- `app/runtime/` 不导入 `app/services/` 或 `app/endpoints/`。
+- Agent 组装、run 生命周期、HITL、沙箱、流式执行、空闲回收都在 `app/runtime/`。
+- `app/services/` 只保留认证、会话元数据、run 查询等业务逻辑。
+- `app/repositories/` 只负责持久化，不感知 Agent 运行时。
+- `PostgresConversationStore` 是持久化适配器，留在 `app/repositories/`。
 
 ## 4. 请求流程
 
@@ -154,7 +168,7 @@ sequenceDiagram
 1. `POST /api/chat` 的请求体包含 `id`（conversation_id）和本轮 `messages`。
 2. `current_user` 从会话 Cookie 解析当前用户。
 3. `conversation_service.get_owned` 校验该 conversation 的 `user_id` 与当前用户一致。
-4. `RunManager`（`app/services/run_manager.py`）以 `conversation_id` 获取 Postgres advisory lock，并写入一条 `runs` 记录，状态为 `running`。
+4. `RunManager`（`app/runtime/runs/manager.py`）以 `conversation_id` 获取 Postgres advisory lock，并写入一条 `runs` 记录，状态为 `running`。
 5. `SandboxRegistry.ensure` 查找该 conversation 的沙箱记录；存在则复用，不存在则创建并写入 `sandbox_sessions`。
 6. `AgentFactory.build` 使用当前 conversation 的依赖构建 Agent。模型实例在应用启动时创建，由所有 run 复用。
 7. `VercelAIAdapter.from_request` 解析请求，`run_stream` 以 `conversation_store` 加载历史、执行 Agent，`streaming_response` 编码 SSE，并在结束后保存历史。
@@ -185,7 +199,7 @@ sequenceDiagram
 
 ## 5. Agent 组装
 
-`AgentFactory` 在每次 run 前构建 Agent，使用进程级模型实例和当前 conversation 的依赖。模型由 `app/services/agent/model.py` 的 `build_model()` 构建：`ConfiguredDeepSeekProvider` 显式传入 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL`，不再依赖进程环境变量。
+`AgentFactory` 在每次 run 前构建 Agent，使用进程级模型实例和当前 conversation 的依赖。模型由 `app/runtime/agent/model.py` 的 `build_model()` 构建：`ConfiguredDeepSeekProvider` 显式传入 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL`，不再依赖进程环境变量。
 
 | Capability | 作用 |
 | --- | --- |
@@ -202,7 +216,7 @@ sequenceDiagram
 | `conversation_id` | `str` | 当前会话 |
 | `approval_mode` | `Literal['full', 'auto', 'read-only']` | 审批模式 |
 
-组装代码位于 `app/services/agent/factory.py`：
+组装代码位于 `app/runtime/agent/factory.py`：
 
 ```python
 agent = Agent(
@@ -255,7 +269,7 @@ agent = Agent(
 | `sandbox_id` | 阿里云沙箱 ID |
 | `last_used_at` | 最近一次使用时间 |
 
-`SandboxRegistry` 实现在 `app/services/sandbox_registry.py`。行为：
+`SandboxRegistry` 实现在 `app/runtime/sandboxes/registry.py`。行为：
 
 1. 查询 `sandbox_sessions` 中该 conversation 的记录。
 2. 存在时更新 `last_used_at`，返回 `WorkspaceRef(provider='e2b', id=sandbox_id)`。
@@ -274,7 +288,7 @@ agent = Agent(
 
 `E2B_TEMPLATE` 为空时使用阿里云默认模板。默认模板包含 Python 3.13、git、Node 20，不包含 `rg`；`Coder` 在缺少 `rg` 时使用 POSIX 搜索。
 
-回收器实现在 `app/job/reaper.py`，由 `app/lifespan.py` 注册到 APScheduler，每 5 分钟执行一次。任务开始前先获取 PostgreSQL advisory lock，只有拿到锁的进程才扫描 `sandbox_sessions`；对 `last_used_at` 超过 30 分钟且没有运行中 run 的沙箱执行 `kill`，并删除记录。
+回收器实现在 `app/runtime/sandboxes/reaper.py`，由 `app/lifespan.py` 注册到 APScheduler，每 5 分钟执行一次。任务开始前先获取 PostgreSQL advisory lock，只有拿到锁的进程才扫描 `sandbox_sessions`；对 `last_used_at` 超过 30 分钟且没有运行中 run 的沙箱执行 `kill`，并删除记录。
 
 预览与文件接口：
 
@@ -299,6 +313,8 @@ agent = Agent(
 | `sdk_version` | `6`，启用工具审批流 |
 | `on_complete` | 更新 `runs` 与 `sandbox_sessions` |
 | `on_cancel` | 保存取消时的消息 |
+
+流式生命周期由 `app/runtime/runs/stream.py` 的 `AgentRunStream` 管理：`on_complete` / `on_cancel` 回调、客户端断开时的取消与消息保存、沙箱不可用标记、响应后台收尾都在该类中完成。
 
 传入 `conversation_store` 后，历史由服务端持有。前端每次只提交本轮新消息，适配器按 conversation id 加载完整历史并保存新增消息。
 

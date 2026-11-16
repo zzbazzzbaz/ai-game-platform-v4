@@ -7,10 +7,10 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_harness.coder import Coder
 from pydantic_ai_harness.e2b_sandbox import E2BSandbox
 
-from app.services.agent.capabilities.permissions import permissions
-from app.services.agent.capabilities.planning import planning
-from app.services.agent.deps import AgentDeps
-from app.services.agent.instructions import INSTRUCTIONS
+from app.runtime.agent.capabilities.permissions import permissions
+from app.runtime.agent.capabilities.planning import planning
+from app.runtime.agent.deps import AgentDeps
+from app.runtime.agent.instructions import INSTRUCTIONS
 
 
 class AgentFactory:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pydantic_ai_harness.permissions import Permissions
 
-from app.services.agent.deps import AgentDeps
+from app.runtime.agent.deps import AgentDeps
 
 
 def permissions() -> Permissions[AgentDeps]:

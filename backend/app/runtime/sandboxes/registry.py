@@ -13,10 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.config import settings
 from app.repositories.models import SandboxSession
-
-
-class SandboxUnavailable(RuntimeError):
-    """沙箱创建或连接失败。"""
+from app.runtime.sandboxes.errors import SandboxUnavailable
 
 
 @dataclass(frozen=True)

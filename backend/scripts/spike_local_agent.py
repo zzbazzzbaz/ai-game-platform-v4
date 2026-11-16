@@ -13,7 +13,7 @@ from pydantic_ai import Agent
 from pydantic_ai.capabilities import LocalWorkspace
 from pydantic_ai_harness.coder import Coder
 
-from app.services.agent.model import build_model
+from app.runtime.agent.model import build_model
 
 
 async def main() -> None:

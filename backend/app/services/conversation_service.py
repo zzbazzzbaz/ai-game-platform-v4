@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import TypeAdapter
@@ -14,8 +15,8 @@ from app.dto.run import RunOut
 from app.repositories import conversations, runs
 from app.repositories.conversation_store import PostgresConversationStore
 from app.repositories.models import Conversation
-from app.services.run_manager import RunManager
-from app.services.sandbox_registry import SandboxRegistry
+from app.runtime.runs.manager import RunManager
+from app.runtime.sandboxes.registry import SandboxRegistry
 
 _usage_adapter = TypeAdapter(RunUsage)
 _deferred_adapter = TypeAdapter(DeferredToolRequests)
@@ -39,6 +40,18 @@ async def list_conversations(session: AsyncSession, user_id: uuid.UUID) -> list[
 
 async def create_conversation(session: AsyncSession, user_id: uuid.UUID) -> Conversation:
     return await conversations.create(session, user_id)
+
+
+async def apply_title(
+    session: AsyncSession,
+    conversation: Conversation,
+    text: str | None,
+) -> None:
+    if not text or conversation.title != "新会话":
+        return
+    conversation.title = text[:40]
+    conversation.updated_at = datetime.now(UTC)
+    await session.commit()
 
 
 async def get_owned(

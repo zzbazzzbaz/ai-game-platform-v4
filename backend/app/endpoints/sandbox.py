@@ -14,8 +14,9 @@ from app.errors import (
     payload_too_large,
     service_unavailable,
 )
-from app.services import conversation_service, sandbox_service
-from app.services.sandbox_registry import SandboxUnavailable
+from app.runtime.sandboxes import errors as sandbox_errors
+from app.runtime.sandboxes import files as sandbox_files
+from app.services import conversation_service
 
 logger = logging.getLogger(__name__)
 
@@ -48,13 +49,13 @@ async def list_files(
 ) -> FileListOut:
     await _ensure_owned(conversation_id, user, session)
     try:
-        result = await sandbox_service.list_files(registry, conversation_id, path=path)
-    except sandbox_service.SandboxPathError as error:
+        result = await sandbox_files.list_files(registry, conversation_id, path=path)
+    except sandbox_errors.SandboxPathError as error:
         logger.warning(
             "列目录失败：路径超出工作目录，conversation_id=%s path=%r", conversation_id, path
         )
         raise bad_request() from error
-    except sandbox_service.SandboxReadError as error:
+    except sandbox_errors.SandboxReadError as error:
         logger.warning(
             "列目录失败：conversation_id=%s path=%r error=%s", conversation_id, path, error
         )
@@ -72,24 +73,24 @@ async def read_file(
 ) -> Response:
     await _ensure_owned(conversation_id, user, session)
     try:
-        result = await sandbox_service.read_file(registry, conversation_id, path=path)
-    except sandbox_service.SandboxMissingError as error:
+        result = await sandbox_files.read_file(registry, conversation_id, path=path)
+    except sandbox_errors.SandboxMissingError as error:
         logger.warning("读取文件失败：会话还没有沙箱，conversation_id=%s", conversation_id)
         raise not_found() from error
-    except sandbox_service.SandboxPathError as error:
+    except sandbox_errors.SandboxPathError as error:
         logger.warning(
             "读取文件失败：路径超出工作目录，conversation_id=%s path=%r", conversation_id, path
         )
         raise bad_request() from error
-    except sandbox_service.SandboxTargetIsDirectoryError as error:
+    except sandbox_errors.SandboxTargetIsDirectoryError as error:
         logger.warning(
             "读取文件失败：目标是目录，conversation_id=%s path=%r", conversation_id, path
         )
         raise bad_request() from error
-    except sandbox_service.SandboxFileTooLargeError as error:
+    except sandbox_errors.SandboxFileTooLargeError as error:
         logger.warning("读取文件失败：文件过大，conversation_id=%s path=%r", conversation_id, path)
         raise payload_too_large() from error
-    except sandbox_service.SandboxReadError as error:
+    except sandbox_errors.SandboxReadError as error:
         logger.warning(
             "读取文件失败：conversation_id=%s path=%r error=%s", conversation_id, path, error
         )
@@ -108,13 +109,13 @@ async def preview(
 ) -> PreviewOut:
     await _ensure_owned(conversation_id, user, session)
     try:
-        url = await sandbox_service.preview_url(registry, conversation_id, port=port)
-    except sandbox_service.SandboxMissingError as error:
+        url = await sandbox_files.preview_url(registry, conversation_id, port=port)
+    except sandbox_errors.SandboxMissingError as error:
         logger.warning(
             "获取预览地址失败：会话还没有沙箱，conversation_id=%s port=%s", conversation_id, port
         )
         raise not_found() from error
-    except SandboxUnavailable as error:
+    except sandbox_errors.SandboxUnavailable as error:
         logger.warning(
             "获取预览地址失败：conversation_id=%s port=%s error=%s",
             conversation_id,
@@ -139,19 +140,19 @@ async def upload_file(
     path: str | None = Form(default=None),
 ) -> UploadOut:
     await _ensure_owned(conversation_id, user, session)
-    data = await file.read(sandbox_service.MAX_FILE_BYTES + 1)
+    data = await file.read(sandbox_files.MAX_FILE_BYTES + 1)
     try:
-        return await sandbox_service.upload_file(
+        return await sandbox_files.upload_file(
             registry,
             conversation_id,
             filename=file.filename,
             data=data,
             path=path,
         )
-    except sandbox_service.SandboxMissingError as error:
+    except sandbox_errors.SandboxMissingError as error:
         logger.warning("上传文件失败：会话还没有沙箱，conversation_id=%s", conversation_id)
         raise not_found() from error
-    except sandbox_service.SandboxFileTooLargeError as error:
+    except sandbox_errors.SandboxFileTooLargeError as error:
         logger.warning(
             "上传文件失败：文件过大，conversation_id=%s filename=%r size=%s",
             conversation_id,
@@ -159,12 +160,12 @@ async def upload_file(
             len(data),
         )
         raise payload_too_large() from error
-    except sandbox_service.SandboxPathError as error:
+    except sandbox_errors.SandboxPathError as error:
         logger.warning(
             "上传文件失败：路径超出工作目录，conversation_id=%s path=%r", conversation_id, path
         )
         raise bad_request() from error
-    except sandbox_service.SandboxWriteError as error:
+    except sandbox_errors.SandboxWriteError as error:
         logger.warning(
             "上传文件失败：conversation_id=%s filename=%r error=%s",
             conversation_id,

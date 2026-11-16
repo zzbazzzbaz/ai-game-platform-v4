@@ -9,33 +9,17 @@ from pathlib import Path
 from pydantic_ai.workspaces import WorkspaceError, WorkspaceUnavailableError
 
 from app.dto.sandbox import FileEntryOut, FileListOut, UploadOut
-from app.services.sandbox_registry import SandboxRegistry
+from app.runtime.sandboxes.errors import (
+    SandboxFileTooLargeError,
+    SandboxMissingError,
+    SandboxPathError,
+    SandboxReadError,
+    SandboxTargetIsDirectoryError,
+    SandboxWriteError,
+)
+from app.runtime.sandboxes.registry import SandboxRegistry
 
 MAX_FILE_BYTES = 2 * 1024 * 1024
-
-
-class SandboxMissingError(Exception):
-    """会话还没有活跃沙箱。"""
-
-
-class SandboxPathError(Exception):
-    """目标路径超出沙箱工作目录。"""
-
-
-class SandboxFileTooLargeError(Exception):
-    """文件超过接口允许的大小。"""
-
-
-class SandboxTargetIsDirectoryError(Exception):
-    """读取目标是目录。"""
-
-
-class SandboxReadError(Exception):
-    """读取文件或目录失败。"""
-
-
-class SandboxWriteError(Exception):
-    """写入文件失败。"""
 
 
 @dataclass(frozen=True)

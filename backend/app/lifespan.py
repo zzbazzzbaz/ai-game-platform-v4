@@ -11,13 +11,13 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.database import dispose_engine, session_factory
-from app.job.reaper import SCAN_INTERVAL_SECONDS, run_reaper
 from app.repositories.conversation_store import PostgresConversationStore
-from app.services import run_service
-from app.services.agent.factory import AgentFactory
-from app.services.agent.model import build_model
-from app.services.run_manager import RunManager
-from app.services.sandbox_registry import SandboxRegistry, create_e2b_client
+from app.runtime.agent.factory import AgentFactory
+from app.runtime.agent.model import build_model
+from app.runtime.runs.lifecycle import fail_stale_runs
+from app.runtime.runs.manager import RunManager
+from app.runtime.sandboxes.reaper import SCAN_INTERVAL_SECONDS, run_reaper
+from app.runtime.sandboxes.registry import SandboxRegistry, create_e2b_client
 
 logger = logging.getLogger(__name__)
 
@@ -46,7 +46,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     app.state.run_manager = run_manager
     app.state.agent_factory = agent_factory
 
-    stale = await run_service.fail_stale_runs(session_factory)
+    stale = await fail_stale_runs(session_factory)
     if stale:
         logger.info("已标记 %s 条遗留的 running 记录为 failed", stale)
 

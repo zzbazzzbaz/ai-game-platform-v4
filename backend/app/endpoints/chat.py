@@ -1,14 +1,12 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import uuid
 from typing import Any
 
 from fastapi import APIRouter, Request
 from pydantic import TypeAdapter, ValidationError
-from pydantic_ai import AgentRunResult
-from pydantic_ai.exceptions import RunCancelled, UserError
+from pydantic_ai.exceptions import UserError
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from pydantic_ai.usage import RunUsage
@@ -25,15 +23,30 @@ from app.dependencies import (
 )
 from app.dto.chat import CancelRunOut
 from app.errors import bad_request, conflict, not_found, service_unavailable
-from app.services import chat_service, conversation_service
-from app.services.agent.deps import AgentDeps
-from app.services.run_manager import RunBusy
-from app.services.sandbox_registry import SandboxUnavailable
+from app.runtime.agent.deps import AgentDeps
+from app.runtime.runs import hitl
+from app.runtime.runs.manager import RunBusy
+from app.runtime.runs.stream import AgentRunStream
+from app.runtime.sandboxes.errors import SandboxUnavailable
+from app.services import conversation_service
 
 logger = logging.getLogger(__name__)
 _usage_adapter = TypeAdapter(RunUsage)
 
 router = APIRouter(tags=["对话"])
+
+
+def _first_user_text(body: dict[str, Any]) -> str | None:
+    messages = body.get("messages")
+    if not isinstance(messages, list):
+        return None
+    for message in reversed(messages):
+        if not isinstance(message, dict) or message.get("role") != "user":
+            continue
+        for part in message.get("parts") or []:
+            if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
+                return str(part["text"]).strip()
+    return None
 
 
 @router.post("/chat")
@@ -89,14 +102,16 @@ async def chat(
             error,
         )
         raise bad_request() from error
-    deferred_results = await chat_service.normalize_deferred_results(
+    deferred_results = await hitl.normalize_deferred_results(
         store,
         conversation_id=conversation_id,
         scope=user.id,
         deferred_results=deferred_results,
     )
 
-    await chat_service.apply_title(session, conversation, chat_service.first_user_text(body))
+    await conversation_service.apply_title(
+        session, conversation, _first_user_text(body)
+    )
 
     usage_baseline = _usage_adapter.validate_python(conversation.usage or {})
     try:
@@ -113,76 +128,22 @@ async def chat(
         )
         raise conflict() from None
 
-    async def save_cancelled(cancelled: RunCancelled) -> None:
-        await chat_service.save_cancelled(
-            store,
-            conversation_id=conversation_id,
-            scope=user.id,
-            cancelled=cancelled,
-        )
-
-    async def finalize() -> None:
-        try:
-            await registry.touch(handle.sandbox_id)
-        except Exception:  # 收尾失败不影响运行记录
-            logger.exception("更新沙箱 last_used_at 失败")
-        await run_manager.finish(active)
-
     try:
         handle = await registry.ensure(conversation_id)
-
-        async def on_complete(result: AgentRunResult[Any]) -> None:
-            active.result = result
-
-        async def on_cancel(cancelled: RunCancelled) -> None:
-            active.cancelled = True
-            active.usage = cancelled.usage
-            await save_cancelled(cancelled)
-
-        stream = adapter.run_stream(
-            conversation_id=str(conversation_id),
-            deps=AgentDeps(
-                user_id=user.id,
-                conversation_id=str(conversation_id),
-                approval_mode="auto",
-            ),
-            workspace=handle.ref,
-            deferred_tool_results=deferred_results,
-            on_complete=on_complete,
-            on_cancel=on_cancel,
-            cancellation_token=active.cancellation,
+        stream = AgentRunStream(
+            adapter=adapter,
+            store=store,
+            registry=registry,
+            run_manager=run_manager,
+            active=active,
+            handle=handle,
+            conversation_id=conversation_id,
+            user_id=user.id,
+            deferred_results=deferred_results,
         )
-
-        async def wrapped_stream():
-            try:
-                async for chunk in stream:
-                    yield chunk
-            except asyncio.CancelledError as error:
-                active.cancelled = True
-                cancelled = RunCancelled.from_cancellation(error)
-                if cancelled is not None:
-                    active.usage = cancelled.usage
-                    # 断开时当前 task 已被取消，放到独立 task 里保存，避免 await 再次被打断。
-                    task = asyncio.create_task(save_cancelled(cancelled))
-                    try:
-                        await asyncio.shield(task)
-                    except asyncio.CancelledError:
-                        pass
-                raise
-            except BaseException as error:  # 记录后交给运行记录
-                active.error = error
-                if chat_service.workspace_unavailable(error):
-                    await registry.mark_dead(handle.sandbox_id)
-                raise
-            finally:
-                # 客户端断开或生成器被关闭时，确保底层 agent run 也被取消。
-                if active.result is None and active.error is None and not active.cancelled:
-                    active.cancelled = True
-                    active.cancellation.cancel()
-
-        response = adapter.streaming_response(wrapped_stream())
+        response = adapter.streaming_response(stream.aiter())
         # 客户端提前断开时生成器不一定收尾，用响应后台任务兜底释放运行锁。
-        response.background = BackgroundTask(finalize)
+        response.background = BackgroundTask(stream.finalize)
         return response
     except SandboxUnavailable as error:
         logger.warning("沙箱不可用：conversation_id=%s error=%s", conversation_id, error)
@@ -212,7 +173,7 @@ async def cancel_run(
         )
         raise not_found() from error
 
-    run_id = await chat_service.cancel_waiting(session, conversation, run_manager)
+    run_id = await hitl.cancel_waiting(session, conversation, run_manager)
     if run_id is None:
         logger.warning("取消运行失败：没有运行中的回答，conversation_id=%s", conversation_id)
         raise conflict()
