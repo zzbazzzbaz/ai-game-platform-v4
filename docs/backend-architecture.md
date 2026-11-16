@@ -28,6 +28,8 @@ pydantic-ai学习/
 ├── .env
 ├── .env.example
 ├── .python-version
+├── .gitignore
+├── Makefile
 ├── docker-compose.yml
 ├── docs/
 │   ├── backend-architecture.md
@@ -399,22 +401,37 @@ HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包�
 
 ## 11. 启动
 
-```bash
-docker compose up -d db
+项目根目录提供 `Makefile`。
 
-cd backend
-uv sync
-uv run alembic upgrade head
-uv run uvicorn app.main:app --reload --port 8000
+首次准备：
+
+```bash
+make up
+make install
+make migrate
+```
+
+开发模式：
+
+```bash
+make dev
+```
+
+后端监听 `:8000`，前端监听 `:5173`。也可以分别启动：
+
+```bash
+make run-api
+make run-ui
+```
+
+其他命令：
+
+```bash
+make build   # 前端生产构建
+make check   # ruff、ty、前端类型检查
+make smoke   # 真实模型 + 沙箱 smoke，需先启动后端
 ```
 
 沙箱回收任务由应用 lifespan 内的 APScheduler 启动，不需要单独进程。
 
 `uv` 使用根目录的 `.python-version`（3.14），虚拟环境位于 `backend/.venv`。
-
-静态检查：
-
-```bash
-uv run ruff check
-uv run ty check
-```
