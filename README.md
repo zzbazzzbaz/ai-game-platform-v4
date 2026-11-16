@@ -58,7 +58,7 @@ make dev
 阿里云二代 runtime 的自定义模板只接受官方公共镜像或 ACR EE，不能直接使用 Docker Hub 镜像。Docker Hub 镜像仍由 GitHub Actions 构建并公开：
 
 ```text
-docker.io/<DOCKERHUB_USERNAME>/ai-game-platform-sandbox:sandbox-v2
+docker.io/<DOCKERHUB_USERNAME>/ai-game-platform-sandbox:sandbox-v4
 ```
 
 阿里云模板使用官方 `runtime-v2/base:v0.0.53` + 构建步骤安装 Playwright、noVNC 和游戏模板：
