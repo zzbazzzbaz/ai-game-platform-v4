@@ -8,7 +8,7 @@ from app.dependencies import CurrentUser, DbSession, RegistryDep
 from app.dto.sandbox import FileListOut, PreviewOut, UploadOut
 from app.errors import (
     bad_gateway,
-    bad_request,
+    bad_request_detail,
     not_found,
     payload_too_large,
     service_unavailable,
@@ -27,7 +27,7 @@ async def _ensure_owned(
     try:
         await conversation_service.get_owned(session, conversation_id, user.id)
     except conversation_service.ConversationNotFoundError as error:
-        raise not_found("会话不存在") from error
+        raise not_found() from error
 
 
 @router.get("/conversations/{conversation_id}/sandbox/files", response_model=FileListOut)
@@ -42,9 +42,9 @@ async def list_files(
     try:
         result = await sandbox_service.list_files(registry, conversation_id, path=path)
     except sandbox_service.SandboxPathError as error:
-        raise bad_request("路径超出工作目录") from error
+        raise bad_request_detail("路径超出工作目录") from error
     except sandbox_service.SandboxReadError as error:
-        raise not_found(str(error)) from error
+        raise not_found() from error
     return result if result is not None else FileListOut(path=path or "")
 
 
@@ -60,15 +60,15 @@ async def read_file(
     try:
         result = await sandbox_service.read_file(registry, conversation_id, path=path)
     except sandbox_service.SandboxMissingError as error:
-        raise not_found("该会话还没有沙箱") from error
+        raise not_found() from error
     except sandbox_service.SandboxPathError as error:
-        raise bad_request("路径超出工作目录") from error
+        raise bad_request_detail("路径超出工作目录") from error
     except sandbox_service.SandboxTargetIsDirectoryError as error:
-        raise bad_request("目标是目录") from error
+        raise bad_request_detail("目标是目录") from error
     except sandbox_service.SandboxFileTooLargeError as error:
         raise payload_too_large() from error
     except sandbox_service.SandboxReadError as error:
-        raise not_found(str(error)) from error
+        raise not_found() from error
     return Response(content=result.content, media_type=result.media_type)
 
 
@@ -85,9 +85,9 @@ async def preview(
     try:
         url = await sandbox_service.preview_url(registry, conversation_id, port=port)
     except sandbox_service.SandboxMissingError as error:
-        raise not_found("该会话还没有沙箱") from error
+        raise not_found() from error
     except SandboxUnavailable as error:
-        raise service_unavailable(str(error)) from error
+        raise service_unavailable() from error
     return PreviewOut(url=url)
 
 
@@ -115,10 +115,10 @@ async def upload_file(
             path=path,
         )
     except sandbox_service.SandboxMissingError as error:
-        raise not_found("该会话还没有沙箱") from error
+        raise not_found() from error
     except sandbox_service.SandboxFileTooLargeError as error:
         raise payload_too_large() from error
     except sandbox_service.SandboxPathError as error:
-        raise bad_request("路径超出工作目录") from error
+        raise bad_request_detail("路径超出工作目录") from error
     except sandbox_service.SandboxWriteError as error:
-        raise bad_gateway(str(error)) from error
+        raise bad_gateway() from error

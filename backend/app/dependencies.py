@@ -43,7 +43,7 @@ async def current_user(request: Request, session: DbSession) -> User:
 
     user = await auth_service.user_from_token(session, token)
     if user is None:
-        raise unauthorized("登录已过期")
+        raise unauthorized()
     return user
 
 

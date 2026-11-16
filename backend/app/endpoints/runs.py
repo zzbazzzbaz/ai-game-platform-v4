@@ -21,5 +21,5 @@ async def get_run(
     try:
         run = await run_service.get_run(session, run_id, user.id)
     except run_service.RunNotFoundError as error:
-        raise not_found("运行记录不存在") from error
+        raise not_found() from error
     return RunOut.model_validate(run)

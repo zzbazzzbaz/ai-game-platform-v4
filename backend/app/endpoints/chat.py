@@ -23,7 +23,13 @@ from app.dependencies import (
     StoreDep,
 )
 from app.dto.chat import CancelRunOut
-from app.errors import bad_request, conflict, not_found, service_unavailable
+from app.errors import (
+    bad_request_detail,
+    conflict,
+    conflict_detail,
+    not_found,
+    service_unavailable,
+)
 from app.services import chat_service, conversation_service
 from app.services.agent.deps import AgentDeps
 from app.services.run_manager import RunBusy
@@ -48,18 +54,18 @@ async def chat(
     try:
         body = await request.json()
     except ValueError:
-        raise bad_request("请求体不是合法 JSON") from None
+        raise bad_request_detail("请求体不是合法 JSON") from None
 
     conversation_id_raw = body.get("id") if isinstance(body, dict) else None
     try:
         conversation_id = uuid.UUID(str(conversation_id_raw))
     except (ValueError, TypeError):
-        raise bad_request("缺少合法的 conversation id") from None
+        raise bad_request_detail("缺少合法的 conversation id") from None
 
     try:
         conversation = await conversation_service.get_owned(session, conversation_id, user.id)
     except conversation_service.ConversationNotFoundError as error:
-        raise not_found("会话不存在") from error
+        raise not_found() from error
 
     agent = agent_factory.build()
     try:
@@ -71,12 +77,12 @@ async def chat(
             conversation_scope=str(user.id),
         )
     except (ValidationError, UserError) as error:
-        raise bad_request("消息格式不合法") from error
+        raise bad_request_detail("消息格式不合法") from error
 
     try:
         deferred_results = adapter.deferred_tool_results
     except UserError as error:
-        raise bad_request(str(error)) from error
+        raise bad_request_detail(str(error)) from error
     deferred_results = await chat_service.normalize_deferred_results(
         store,
         conversation_id=conversation_id,
@@ -96,7 +102,7 @@ async def chat(
             usage_baseline=usage_baseline,
         )
     except RunBusy:
-        raise conflict("该会话正在运行，请等待当前回答结束") from None
+        raise conflict() from None
 
     async def save_cancelled(cancelled: RunCancelled) -> None:
         await chat_service.save_cancelled(
@@ -172,7 +178,7 @@ async def chat(
     except SandboxUnavailable as error:
         active.error = error
         await run_manager.finish(active)
-        raise service_unavailable(str(error)) from error
+        raise service_unavailable() from error
     except BaseException:
         await run_manager.finish(active)
         raise
@@ -191,9 +197,9 @@ async def cancel_run(
     try:
         conversation = await conversation_service.get_owned(session, conversation_id, user.id)
     except conversation_service.ConversationNotFoundError as error:
-        raise not_found("会话不存在") from error
+        raise not_found() from error
 
     run_id = await chat_service.cancel_waiting(session, conversation, run_manager)
     if run_id is None:
-        raise conflict("当前没有运行中的回答")
+        raise conflict_detail("当前没有运行中的回答")
     return CancelRunOut(run_id=run_id)

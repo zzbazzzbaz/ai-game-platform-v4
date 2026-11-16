@@ -12,7 +12,7 @@ from app.dependencies import (
     StoreDep,
 )
 from app.dto.conversation import ConversationDetailOut, ConversationOut
-from app.errors import conflict, not_found, service_unavailable
+from app.errors import conflict_detail, not_found, service_unavailable
 from app.services import conversation_service
 
 router = APIRouter(prefix="/conversations", tags=["会话"])
@@ -51,7 +51,7 @@ async def get_conversation(
             store=store,
         )
     except conversation_service.ConversationNotFoundError as error:
-        raise not_found("会话不存在") from error
+        raise not_found() from error
 
 
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -73,8 +73,8 @@ async def delete_conversation(
             run_manager=run_manager,
         )
     except conversation_service.ConversationNotFoundError as error:
-        raise not_found("会话不存在") from error
+        raise not_found() from error
     except conversation_service.ConversationBusyError as error:
-        raise conflict("会话正在运行，无法删除") from error
+        raise conflict_detail("会话正在运行，无法删除") from error
     except conversation_service.SandboxCleanupError as error:
-        raise service_unavailable("沙箱销毁失败，请稍后重试") from error
+        raise service_unavailable() from error

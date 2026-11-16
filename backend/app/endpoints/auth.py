@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, Response, status
 from app.config import settings
 from app.dependencies import CurrentUser, DbSession
 from app.dto.auth import LoginRequest, UserOut
-from app.errors import bad_request, conflict, unauthorized
+from app.errors import bad_request_detail, conflict_detail, unauthorized
 from app.security import token_from_cookie
 from app.services import auth_service
 
@@ -33,7 +33,7 @@ async def login(
     try:
         user = await auth_service.login(session, email=body.email, password=body.password)
     except auth_service.InvalidCredentialsError as error:
-        raise unauthorized("邮箱或密码错误") from error
+        raise unauthorized() from error
 
     issued = await auth_service.issue_session(session, user)
     _set_session_cookie(response, issued)
@@ -49,9 +49,9 @@ async def register(
     try:
         user = await auth_service.register(session, email=body.email, password=body.password)
     except auth_service.EmailTakenError as error:
-        raise conflict("邮箱已注册") from error
+        raise conflict_detail("邮箱已注册") from error
     except auth_service.WeakPasswordError as error:
-        raise bad_request("密码至少 6 位") from error
+        raise bad_request_detail("密码至少 6 位") from error
 
     issued = await auth_service.issue_session(session, user)
     _set_session_cookie(response, issued)
