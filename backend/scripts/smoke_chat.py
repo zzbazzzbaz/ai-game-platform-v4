@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import httpx
 
-from app.shared.config import settings
+from app.config import settings
 
 BASE_URL = "http://127.0.0.1:8000"
 
