@@ -9,7 +9,7 @@ ROOT_DIR = BACKEND_DIR.parent
 
 
 class Settings(BaseSettings):
-    """应用配置。根目录 .env 先加载，backend/.env 覆盖。"""
+    """应用配置。所有值只来自环境变量文件，代码中不提供默认值。"""
 
     model_config = SettingsConfigDict(
         env_file=(ROOT_DIR / ".env", BACKEND_DIR / ".env"),
@@ -17,27 +17,27 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    model: str = "deepseek:deepseek-flash"
-    deepseek_api_key: str = ""
+    model: str
+    deepseek_api_key: str
 
-    database_url: str = "postgresql+asyncpg://agent:agent@localhost:5432/agent"
+    database_url: str
 
-    session_secret: str = "dev-session-secret"
-    session_cookie: str = "agent_session"
-    session_ttl_seconds: int = 60 * 60 * 24 * 30
+    session_secret: str
+    session_cookie: str
+    session_ttl_seconds: int
 
-    demo_email: str = "demo@example.com"
-    demo_password: str = "demo1234"
+    demo_email: str
+    demo_password: str
 
-    e2b_api_key: str = ""
-    e2b_api_url: str = ""
-    e2b_domain: str = ""
-    e2b_template: str = ""
+    e2b_api_key: str
+    e2b_api_url: str
+    e2b_domain: str
+    e2b_template: str
 
-    logfire_token: str = ""
+    logfire_token: str
 
-    sandbox_timeout: int = 3600
-    sandbox_idle_seconds: int = 60 * 30
+    sandbox_timeout: int
+    sandbox_idle_seconds: int
 
     @property
     def e2b_template_name(self) -> str | None:

@@ -60,7 +60,7 @@ async def fail_stale_runs() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.deepseek_api_key:
-        os.environ.setdefault("DEEPSEEK_API_KEY", settings.deepseek_api_key)
+        os.environ["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
 
     if settings.logfire_token:
         logfire.configure(token=settings.logfire_token)

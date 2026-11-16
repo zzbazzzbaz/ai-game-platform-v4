@@ -338,7 +338,7 @@ agent = Agent(
 
 ## 10. 配置
 
-配置由 `app/config.py` 读取。加载顺序：根目录 `.env`，然后 `backend/.env`，后者覆盖前者。
+配置由 `app/config.py` 读取。加载顺序：根目录 `.env`，然后 `backend/.env`，后者覆盖前者。`Settings` 不提供默认值，缺少任一配置键时启动失败。
 
 | 环境变量 | 说明 |
 | --- | --- |
@@ -346,8 +346,8 @@ agent = Agent(
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
 | `DATABASE_URL` | `postgresql+asyncpg://agent:agent@localhost:5432/agent` |
 | `SESSION_SECRET` | 会话 Cookie 签名密钥 |
-| `SESSION_COOKIE` | 会话 Cookie 名称，默认 `agent_session` |
-| `SESSION_TTL_SECONDS` | 会话有效期，默认 30 天 |
+| `SESSION_COOKIE` | 会话 Cookie 名称，`.env` 中为 `agent_session` |
+| `SESSION_TTL_SECONDS` | 会话有效期，`.env` 中为 `2592000` |
 | `DEMO_EMAIL` | 演示账号邮箱 |
 | `DEMO_PASSWORD` | 演示账号密码 |
 | `E2B_API_KEY` | 阿里云 Agent Sandbox API Key |
@@ -355,8 +355,8 @@ agent = Agent(
 | `E2B_DOMAIN` | `<region>.sandbox.aliyuncs.com` |
 | `E2B_TEMPLATE` | 沙箱模板名称；为空时使用默认模板 |
 | `LOGFIRE_TOKEN` | Logfire 写入 Token，可为空 |
-| `SANDBOX_TIMEOUT` | 沙箱生命周期秒数，默认 3600 |
-| `SANDBOX_IDLE_SECONDS` | 空闲回收阈值秒数，默认 1800 |
+| `SANDBOX_TIMEOUT` | 沙箱生命周期秒数，`.env` 中为 `3600` |
+| `SANDBOX_IDLE_SECONDS` | 空闲回收阈值秒数，`.env` 中为 `1800` |
 
 ## 11. 启动
 
