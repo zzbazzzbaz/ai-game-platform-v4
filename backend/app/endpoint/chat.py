@@ -4,9 +4,9 @@ import asyncio
 import logging
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import AgentRunResult, Conversation as AgentConversation
 from pydantic_ai.exceptions import RunCancelled, UserError
@@ -15,25 +15,22 @@ from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from pydantic_ai.usage import RunUsage
 from pydantic_ai.workspaces import WorkspaceUnavailableError
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.background import BackgroundTask
 
 from app.agent.deps import AgentDeps
-from app.agent.factory import AgentFactory
-from app.db import get_session
+from app.config import settings
 from app.endpoint.deps import (
-    current_user,
-    get_agent_factory,
-    get_registry,
-    get_run_manager,
-    get_store,
+    AgentFactoryDep,
+    CurrentUser,
+    DbSession,
+    RegistryDep,
+    RunManagerDep,
+    StoreDep,
     owned_conversation,
 )
-from app.config import settings
-from app.models import Conversation, Run, User
-from app.runtime.runs import RunBusy, RunManager
-from app.runtime.sandboxes import SandboxRegistry, SandboxUnavailable
-from app.store.conversations import PostgresConversationStore
+from app.models import Conversation, Run
+from app.runtime.runs import RunBusy
+from app.runtime.sandboxes import SandboxUnavailable
 
 logger = logging.getLogger(__name__)
 _usage_adapter = TypeAdapter(RunUsage)
@@ -66,12 +63,12 @@ def _first_user_text(body: dict[str, Any]) -> str | None:
 @router.post("/chat")
 async def chat(
     request: Request,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    store: Annotated[PostgresConversationStore, Depends(get_store)],
-    registry: Annotated[SandboxRegistry, Depends(get_registry)],
-    run_manager: Annotated[RunManager, Depends(get_run_manager)],
-    agent_factory: Annotated[AgentFactory, Depends(get_agent_factory)],
+    user: CurrentUser,
+    session: DbSession,
+    store: StoreDep,
+    registry: RegistryDep,
+    run_manager: RunManagerDep,
+    agent_factory: AgentFactoryDep,
 ):
     try:
         body = await request.json()
@@ -227,9 +224,9 @@ async def chat(
 @router.post("/conversations/{conversation_id}/cancel")
 async def cancel_run(
     conversation_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    run_manager: Annotated[RunManager, Depends(get_run_manager)],
+    user: CurrentUser,
+    session: DbSession,
+    run_manager: RunManagerDep,
 ) -> dict[str, str]:
     conversation = await owned_conversation(conversation_id, user, session)
 

@@ -1,35 +1,31 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 
-from app.db import get_session
 from app.endpoint.deps import (
-    current_user,
-    get_registry,
-    get_run_manager,
-    get_store,
+    CurrentUser,
+    DbSession,
+    RegistryDep,
+    RunManagerDep,
+    StoreDep,
     owned_conversation,
 )
 from app.endpoint.schemas.conversation import ConversationOut
 from app.endpoint.schemas.run import RunOut
-from app.models import Conversation, Run, User
-from app.runtime.runs import RunManager
-from app.runtime.sandboxes import SandboxRegistry
-from app.store.conversations import PostgresConversationStore
+from app.models import Conversation, Run
 
 router = APIRouter(prefix="/conversations", tags=["conversations"])
 
 
 @router.get("", response_model=list[ConversationOut])
 async def list_conversations(
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+    user: CurrentUser,
+    session: DbSession,
 ) -> list[ConversationOut]:
     rows = (
         await session.scalars(
@@ -43,8 +39,8 @@ async def list_conversations(
 
 @router.post("", response_model=ConversationOut, status_code=status.HTTP_201_CREATED)
 async def create_conversation(
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+    user: CurrentUser,
+    session: DbSession,
 ) -> ConversationOut:
     row = Conversation(id=uuid.uuid7(), user_id=user.id, title="新会话", usage={})
     session.add(row)
@@ -56,9 +52,9 @@ async def create_conversation(
 @router.get("/{conversation_id}")
 async def get_conversation(
     conversation_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    store: Annotated[PostgresConversationStore, Depends(get_store)],
+    user: CurrentUser,
+    session: DbSession,
+    store: StoreDep,
 ) -> dict[str, Any]:
     row = await owned_conversation(conversation_id, user, session)
     conversation = await store.load(str(conversation_id), scope=str(user.id))
@@ -90,11 +86,11 @@ async def get_conversation(
 @router.delete("/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_conversation(
     conversation_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    store: Annotated[PostgresConversationStore, Depends(get_store)],
-    registry: Annotated[SandboxRegistry, Depends(get_registry)],
-    run_manager: Annotated[RunManager, Depends(get_run_manager)],
+    user: CurrentUser,
+    session: DbSession,
+    store: StoreDep,
+    registry: RegistryDep,
+    run_manager: RunManagerDep,
 ) -> None:
     await owned_conversation(conversation_id, user, session)
     if run_manager.active(conversation_id) is not None:

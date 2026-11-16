@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.endpoint.deps import current_user
+from app.config import settings
+from app.endpoint.deps import CurrentUser, DbSession
 from app.endpoint.schemas.auth import LoginRequest, UserOut
 from app.security import (
     hash_password,
@@ -16,8 +16,6 @@ from app.security import (
     token_from_cookie,
     verify_password,
 )
-from app.config import settings
-from app.db import get_session
 from app.models import Session, User
 
 router = APIRouter(tags=["auth"])
@@ -48,7 +46,7 @@ async def _issue_session(session: AsyncSession, user: User, response: Response) 
 async def login(
     body: LoginRequest,
     response: Response,
-    session: AsyncSession = Depends(get_session),
+    session: DbSession,
 ) -> UserOut:
     user = await session.scalar(select(User).where(User.email == body.email))
     if user is None or not verify_password(user.password_hash, body.password):
@@ -62,7 +60,7 @@ async def login(
 async def register(
     body: LoginRequest,
     response: Response,
-    session: AsyncSession = Depends(get_session),
+    session: DbSession,
 ) -> UserOut:
     existing = await session.scalar(select(User).where(User.email == body.email))
     if existing is not None:
@@ -83,7 +81,7 @@ async def register(
 async def logout(
     request: Request,
     response: Response,
-    session: AsyncSession = Depends(get_session),
+    session: DbSession,
 ) -> Response:
     cookie = request.cookies.get(settings.session_cookie)
     token = token_from_cookie(cookie) if cookie else None
@@ -96,12 +94,12 @@ async def logout(
 
 
 @router.get("/me", response_model=UserOut)
-async def me(user: Annotated[User, Depends(current_user)]) -> UserOut:
+async def me(user: CurrentUser) -> UserOut:
     return UserOut.from_user(user)
 
 
 @router.post("/auth/demo", response_model=UserOut)
-async def demo_login(response: Response, session: AsyncSession = Depends(get_session)) -> UserOut:
+async def demo_login(response: Response, session: DbSession) -> UserOut:
     """演示账号一键登录。"""
     user = await session.scalar(select(User).where(User.email == settings.demo_email))
     if user is None:

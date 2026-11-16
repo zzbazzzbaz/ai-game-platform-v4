@@ -1,15 +1,10 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
-
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.db import get_session
-from app.endpoint.deps import current_user
+from fastapi import APIRouter, HTTPException, status
+from app.endpoint.deps import CurrentUser, DbSession
 from app.endpoint.schemas.run import RunOut
-from app.models import Run, User
+from app.models import Run
 
 router = APIRouter(prefix="/runs", tags=["runs"])
 
@@ -17,8 +12,8 @@ router = APIRouter(prefix="/runs", tags=["runs"])
 @router.get("/{run_id}", response_model=RunOut)
 async def get_run(
     run_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+    user: CurrentUser,
+    session: DbSession,
 ) -> RunOut:
     run = await session.get(Run, run_id)
     if run is None or run.user_id != user.id:

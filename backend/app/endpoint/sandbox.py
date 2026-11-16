@@ -4,22 +4,18 @@ import mimetypes
 import posixpath
 import uuid
 from pathlib import Path
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from fastapi import APIRouter, File, Form, HTTPException, Query, Response, UploadFile, status
 from pydantic_ai.workspaces import WorkspaceError, WorkspaceUnavailableError
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db import get_session
-from app.endpoint.deps import current_user, get_registry, owned_conversation
+from app.endpoint.deps import CurrentUser, DbSession, RegistryDep, owned_conversation
 from app.endpoint.schemas.sandbox import (
     FileEntryOut,
     FileListOut,
     PreviewOut,
     UploadOut,
 )
-from app.models import User
-from app.runtime.sandboxes import SandboxRegistry, SandboxUnavailable
+from app.runtime.sandboxes import SandboxUnavailable
 
 router = APIRouter(tags=["sandbox"])
 
@@ -37,9 +33,9 @@ def _safe_path(root: str, path: str) -> str:
 @router.get("/conversations/{conversation_id}/sandbox/files", response_model=FileListOut)
 async def list_files(
     conversation_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    registry: Annotated[SandboxRegistry, Depends(get_registry)],
+    user: CurrentUser,
+    session: DbSession,
+    registry: RegistryDep,
     path: str | None = Query(default=None),
 ) -> FileListOut:
     await owned_conversation(conversation_id, user, session)
@@ -67,9 +63,9 @@ async def list_files(
 @router.get("/conversations/{conversation_id}/sandbox/file")
 async def read_file(
     conversation_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    registry: Annotated[SandboxRegistry, Depends(get_registry)],
+    user: CurrentUser,
+    session: DbSession,
+    registry: RegistryDep,
     path: str = Query(...),
 ) -> Response:
     await owned_conversation(conversation_id, user, session)
@@ -101,9 +97,9 @@ async def read_file(
 async def preview(
     conversation_id: uuid.UUID,
     port: int,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    registry: Annotated[SandboxRegistry, Depends(get_registry)],
+    user: CurrentUser,
+    session: DbSession,
+    registry: RegistryDep,
 ) -> PreviewOut:
     await owned_conversation(conversation_id, user, session)
     handle = await registry.active_handle(conversation_id)
@@ -119,9 +115,9 @@ async def preview(
 @router.post("/conversations/{conversation_id}/files", response_model=UploadOut, status_code=status.HTTP_201_CREATED)
 async def upload_file(
     conversation_id: uuid.UUID,
-    user: Annotated[User, Depends(current_user)],
-    session: Annotated[AsyncSession, Depends(get_session)],
-    registry: Annotated[SandboxRegistry, Depends(get_registry)],
+    user: CurrentUser,
+    session: DbSession,
+    registry: RegistryDep,
     file: UploadFile = File(...),
     path: str | None = Form(default=None),
 ) -> UploadOut:

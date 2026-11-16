@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -61,3 +62,11 @@ async def owned_conversation(
     if row is None or row.user_id != user.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="会话不存在")
     return row
+
+
+CurrentUser = Annotated[User, Depends(current_user)]
+DbSession = Annotated[AsyncSession, Depends(get_session)]
+StoreDep = Annotated[PostgresConversationStore, Depends(get_store)]
+RegistryDep = Annotated[SandboxRegistry, Depends(get_registry)]
+RunManagerDep = Annotated[RunManager, Depends(get_run_manager)]
+AgentFactoryDep = Annotated[AgentFactory, Depends(get_agent_factory)]
