@@ -338,7 +338,7 @@ agent = Agent(
 
 ## 10. 配置
 
-配置由 `app/config.py` 读取。加载顺序：根目录 `.env`，然后 `backend/.env`，后者覆盖前者。`Settings` 不提供默认值，缺少任一配置键时启动失败。
+配置由 `app/config.py` 读取，只使用根目录 `.env`。`Settings` 不提供默认值，缺少任一配置键时启动失败。
 
 | 环境变量 | 说明 |
 | --- | --- |

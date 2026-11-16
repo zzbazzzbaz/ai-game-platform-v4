@@ -60,7 +60,7 @@ class SandboxRegistry:
             await self.touch(row.sandbox_id)
             return SandboxHandle(id=row.id, sandbox_id=row.sandbox_id, template=row.template)
 
-        template = settings.e2b_template_name
+        template = settings.e2b_template or None
         try:
             sandbox = await self._client.AsyncSandbox.create(
                 template=template,

@@ -75,7 +75,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     agent_factory = AgentFactory(
         infer_model(settings.model),
         e2b_client=e2b_client,
-        template=settings.e2b_template_name,
+        template=settings.e2b_template or None,
         sandbox_timeout=settings.sandbox_timeout,
     )
 

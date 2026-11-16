@@ -15,7 +15,7 @@ from app.runtime.sandboxes import create_e2b_client
 async def main() -> None:
     client = create_e2b_client()
     sandbox = await client.AsyncSandbox.create(
-        template=settings.e2b_template_name,
+        template=settings.e2b_template or None,
         timeout=settings.sandbox_timeout,
         lifecycle={"on_timeout": "pause"},
     )
