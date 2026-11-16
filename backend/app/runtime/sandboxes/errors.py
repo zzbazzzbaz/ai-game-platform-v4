@@ -7,6 +7,10 @@ class SandboxUnavailable(RuntimeError):
     """沙箱创建或连接失败。"""
 
 
+class LockBusy(Exception):
+    """工作区锁被其他操作占用。"""
+
+
 class SandboxMissingError(Exception):
     """会话还没有活跃沙箱。"""
 

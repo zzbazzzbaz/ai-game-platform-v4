@@ -8,6 +8,7 @@ from pathlib import Path
 
 from pydantic_ai.workspaces import WorkspaceError, WorkspaceUnavailableError
 
+from app.config import settings
 from app.dto.sandbox import FileEntryOut, FileListOut, UploadOut
 from app.runtime.sandboxes.errors import (
     SandboxFileTooLargeError,
@@ -38,11 +39,11 @@ def safe_path(root: str, path: str) -> str:
 
 async def list_files(
     registry: SandboxRegistry,
-    conversation_id: uuid.UUID,
+    game_id: uuid.UUID,
     *,
     path: str | None,
 ) -> FileListOut | None:
-    handle = await registry.active_handle(conversation_id)
+    handle = await registry.active_handle(game_id)
     if handle is None:
         return None
 
@@ -67,11 +68,11 @@ async def list_files(
 
 async def read_file(
     registry: SandboxRegistry,
-    conversation_id: uuid.UUID,
+    game_id: uuid.UUID,
     *,
     path: str,
 ) -> FileReadResult:
-    handle = await registry.active_handle(conversation_id)
+    handle = await registry.active_handle(game_id)
     if handle is None:
         raise SandboxMissingError
 
@@ -98,7 +99,7 @@ async def read_file(
 
 async def upload_file(
     registry: SandboxRegistry,
-    conversation_id: uuid.UUID,
+    game_id: uuid.UUID,
     *,
     filename: str | None,
     data: bytes,
@@ -107,7 +108,7 @@ async def upload_file(
     if len(data) > MAX_FILE_BYTES:
         raise SandboxFileTooLargeError
 
-    handle = await registry.active_handle(conversation_id)
+    handle = await registry.active_handle(game_id)
     if handle is None:
         raise SandboxMissingError
 
@@ -124,11 +125,13 @@ async def upload_file(
 
 async def preview_url(
     registry: SandboxRegistry,
-    conversation_id: uuid.UUID,
+    game_id: uuid.UUID,
     *,
     port: int,
 ) -> str:
-    handle = await registry.active_handle(conversation_id)
-    if handle is None:
-        raise SandboxMissingError
+    handle, urls = await registry.open_game(game_id)
+    if port == settings.sandbox_game_port:
+        return urls.game_url
+    if port == settings.sandbox_novnc_port:
+        return urls.novnc_url
     return await registry.preview_host(handle, port)

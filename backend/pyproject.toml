@@ -1,7 +1,7 @@
 [project]
-name = "agent-backend"
+name = "ai-game-platform-backend"
 version = "0.1.0"
-description = "通用智能体后端"
+description = "AI 游戏平台后端：会话、Agent、沙盒生命周期与 OSS 快照"
 requires-python = ">=3.14"
 dependencies = [
     "pydantic-ai-slim[ui,logfire,mcp,openai]==2.68.0",
@@ -14,6 +14,8 @@ dependencies = [
     "pydantic-settings>=2.6",
     "argon2-cffi>=23.1",
     "httpx>=0.28",
+    "oss2>=2.19",
+    "apscheduler==3.11.0",
 ]
 
 [tool.uv]

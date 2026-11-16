@@ -110,7 +110,7 @@ class AgentRunStream:
 
     async def finalize(self) -> None:
         try:
-            await self._registry.touch(self._handle.sandbox_id)
+            await self._registry.touch(self._handle.game_id)
         except Exception:  # 收尾失败不影响运行记录
             logger.exception("更新沙箱 last_used_at 失败")
         await self._run_manager.finish(self._active)

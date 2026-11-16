@@ -21,11 +21,13 @@ SQLAlchemy 模型与列的对应关系见 `backend/app/repositories/models.md`�
 ```mermaid
 erDiagram
   users ||--o{ sessions : "拥有"
+  users ||--o{ games : "拥有"
   users ||--o{ conversations : "拥有"
   users ||--o{ runs : "发起"
 
+  games ||--o{ conversations : "包含"
+  games ||--o| sandbox_sessions : "使用"
   conversations ||--o{ conversation_entries : "包含"
-  conversations ||--o| sandbox_sessions : "使用"
   conversations ||--o{ runs : "产生"
 
   conversation_entries ||--o{ conversation_entries : "parent"
@@ -79,6 +81,7 @@ CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
 CREATE TABLE conversations (
     id                     uuid PRIMARY KEY,
     user_id                uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    game_id                uuid NOT NULL REFERENCES games(id) ON DELETE CASCADE,
     title                  text NOT NULL DEFAULT '新会话',
     head_id                uuid,
     usage                  jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -89,12 +92,14 @@ CREATE TABLE conversations (
 
 CREATE INDEX conversations_user_updated_idx
     ON conversations (user_id, updated_at DESC);
+CREATE INDEX conversations_game_idx ON conversations (game_id);
 ```
 
 | 字段 | 说明 |
 | --- | --- |
 | `id` | UUIDv7；Pydantic AI 侧是字符串，入库时转为 `uuid` |
 | `user_id` | 所属用户 |
+| `game_id` | 所属游戏工作区 |
 | `title` | 会话标题 |
 | `head_id` | 最新一条 `conversation_entries.id`，UUID，逻辑外键 |
 | `usage` | `RunUsage` 的 JSON 表示 |
@@ -135,33 +140,52 @@ CREATE INDEX conversation_entries_parent_idx
 
 `kind` 固定为 `message`，不存列。
 
-### 3.5 sandbox_sessions
+### 3.5 games
+
+```sql
+CREATE TABLE games (
+    id         uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name       text NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+    updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX games_user_updated_idx ON games (user_id, updated_at DESC);
+```
+
+一个 game 对应一个沙盒工作区；多个 conversation 可共享同一个 game。
+
+### 3.6 sandbox_sessions
 
 ```sql
 CREATE TABLE sandbox_sessions (
-    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-    conversation_id uuid NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
-    sandbox_id      text NOT NULL,
-    last_used_at    timestamptz NOT NULL DEFAULT now()
+    id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    game_id          uuid NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    sandbox_id       text,
+    lifecycle_state  text NOT NULL DEFAULT 'active',
+    snapshot_key     text,
+    snapshot_at      timestamptz,
+    snapshot_bytes   bigint,
+    snapshot_sha256  text,
+    last_used_at     timestamptz NOT NULL DEFAULT now(),
+    archive_retry_at timestamptz,
+    archive_attempts integer NOT NULL DEFAULT 0,
+    last_error       text,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    updated_at       timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT sandbox_sessions_state_check
+        CHECK (lifecycle_state IN ('active', 'archiving', 'archived', 'restoring'))
 );
 
-CREATE UNIQUE INDEX sandbox_sessions_conversation_idx
-    ON sandbox_sessions (conversation_id);
-
-CREATE INDEX sandbox_sessions_last_used_idx
-    ON sandbox_sessions (last_used_at);
+CREATE UNIQUE INDEX sandbox_sessions_game_idx ON sandbox_sessions (game_id);
+CREATE INDEX sandbox_sessions_last_used_idx ON sandbox_sessions (last_used_at);
+CREATE INDEX sandbox_sessions_retry_idx ON sandbox_sessions (archive_retry_at);
 ```
 
-| 字段 | 说明 |
-| --- | --- |
-| `id` | 记录 ID |
-| `conversation_id` | 所属会话 |
-| `sandbox_id` | 阿里云沙箱实例 ID |
-| `last_used_at` | 最近一次使用时间 |
+每个 game 最多一条记录。`sandbox_id` 在归档后置空；`snapshot_key` 指向 OSS 工作区 tar.gz。
 
-每个 conversation 最多一条记录，由唯一索引保证。
-
-### 3.6 runs
+### 3.7 runs
 
 ```sql
 CREATE TABLE runs (
@@ -202,7 +226,7 @@ CREATE INDEX runs_user_status_idx
 
 审批状态不单独建表。待处理的审批请求保存在 `conversations.deferred_tool_requests`；用户决定后，`DeferredToolResults` 随下一次 run 传入，调用和结果写入消息历史。
 
-### 3.7 ID 类型约定
+### 3.8 ID 类型约定
 
 | 字段 | 类型 | 生成方 |
 | --- | --- | --- |
@@ -213,8 +237,9 @@ CREATE INDEX runs_user_status_idx
 | `conversation_entries.id` | `uuid` | Pydantic AI `uuid7()`，入库时转 `uuid` |
 | `conversation_entries.parent_id` | `uuid` | 上一条 entry 的 id |
 | `conversation_entries.conversation_id` | `uuid` | `conversations.id` |
+| `games.id` | `uuid` | `gen_random_uuid()` |
 | `sandbox_sessions.id` | `uuid` | `gen_random_uuid()` |
-| `sandbox_sessions.conversation_id` | `uuid` | `conversations.id` |
+| `sandbox_sessions.game_id` | `uuid` | `games.id` |
 | `runs.id` | `uuid` | `gen_random_uuid()` |
 | `runs.conversation_id` | `uuid` | `conversations.id` |
 | `runs.parent_run_id` | `uuid` | 暂停的 run id |
@@ -231,7 +256,9 @@ CREATE INDEX runs_user_status_idx
 | `conversations` | `user_id` → `users.id` | `CASCADE` |
 | `conversation_entries` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `conversation_entries` | `parent_id` → `conversation_entries.id` | `CASCADE` |
-| `sandbox_sessions` | `conversation_id` → `conversations.id` | `CASCADE` |
+| `games` | `user_id` → `users.id` | `CASCADE` |
+| `conversations` | `game_id` → `games.id` | `CASCADE` |
+| `sandbox_sessions` | `game_id` → `games.id` | `CASCADE` |
 | `runs` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `runs` | `user_id` → `users.id` | `CASCADE` |
 | `runs` | `parent_run_id` → `runs.id` | `SET NULL` |

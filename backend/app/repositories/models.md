@@ -10,9 +10,10 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 | --- | --- | --- |
 | `User` | `users` | 用户 |
 | `Session` | `sessions` | 登录会话 |
-| `Conversation` | `conversations` | 会话与 `ConversationStore` 记录 |
+| `Game` | `games` | 游戏工作区 |
+| `Conversation` | `conversations` | 会话与 `ConversationStore` 记录，关联 game |
 | `ConversationEntryRow` | `conversation_entries` | 消息链节点 |
-| `SandboxSession` | `sandbox_sessions` | 会话与沙箱实例映射 |
+| `SandboxSession` | `sandbox_sessions` | game 与沙箱实例、OSS 快照映射 |
 | `Run` | `runs` | 单次 Agent 运行 |
 
 ## users
@@ -45,6 +46,7 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 | --- | --- | --- |
 | `id` | `uuid` | 主键 |
 | `user_id` | `uuid` | 非空，外键 `users.id`，级联删除 |
+| `game_id` | `uuid` | 非空，外键 `games.id`，级联删除 |
 | `title` | `text` | 非空，默认 `新会话` |
 | `head_id` | `uuid` | 可空，指向 `conversation_entries.id`，不建物理外键 |
 | `usage` | `jsonb` | 非空，默认 `{}` |
@@ -55,6 +57,7 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 索引：
 
 - `conversations_user_updated_idx (user_id, updated_at DESC)`
+- `conversations_game_idx (game_id)`
 
 `usage` 保存累计 `RunUsage`。`deferred_tool_requests` 保存当前待处理审批请求，恢复后清空或覆盖。`revision` 不建列，使用 PostgreSQL 系统列 `xmin::text` 做乐观锁。
 
@@ -75,21 +78,47 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 
 `message` 是 `ModelMessagesTypeAdapter` 序列化后的单条 `ModelMessage`。历史从 `conversations.head_id` 沿 `parent_id` 链读取。
 
+## games
+
+| 列 | 类型 | 约束 |
+| --- | --- | --- |
+| `id` | `uuid` | 主键，`gen_random_uuid()` |
+| `user_id` | `uuid` | 非空，外键 `users.id`，级联删除 |
+| `name` | `text` | 非空 |
+| `created_at` | `timestamptz` | 非空，`now()` |
+| `updated_at` | `timestamptz` | 非空，`now()` |
+
+索引：
+
+- `games_user_updated_idx (user_id, updated_at DESC)`
+
+一个 game 对应一个沙盒工作区；多个 conversation 可以共享同一个 game。
+
 ## sandbox_sessions
 
 | 列 | 类型 | 约束 |
 | --- | --- | --- |
 | `id` | `uuid` | 主键，`gen_random_uuid()` |
-| `conversation_id` | `uuid` | 非空，外键 `conversations.id`，级联删除 |
-| `sandbox_id` | `text` | 非空 |
+| `game_id` | `uuid` | 非空，外键 `games.id`，级联删除 |
+| `sandbox_id` | `text` | 可空；归档后置空 |
+| `lifecycle_state` | `text` | 非空，`active` / `archiving` / `archived` / `restoring` |
+| `snapshot_key` | `text` | 可空，OSS 对象 key |
+| `snapshot_at` | `timestamptz` | 可空 |
+| `snapshot_bytes` | `bigint` | 可空 |
+| `snapshot_sha256` | `text` | 可空 |
 | `last_used_at` | `timestamptz` | 非空，`now()` |
+| `archive_retry_at` | `timestamptz` | 可空 |
+| `archive_attempts` | `integer` | 非空，默认 `0` |
+| `last_error` | `text` | 可空 |
+| `created_at` | `timestamptz` | 非空，`now()` |
+| `updated_at` | `timestamptz` | 非空，`now()` |
 
-索引：
+索引与约束：
 
-- `sandbox_sessions_conversation_idx`：`(conversation_id)`，唯一
+- `sandbox_sessions_game_idx`：`(game_id)`，唯一
 - `sandbox_sessions_last_used_idx`：`(last_used_at)`
-
-每个 conversation 最多一条记录。
+- `sandbox_sessions_retry_idx`：`(archive_retry_at)`
+- `sandbox_sessions_state_check`
 
 ## runs
 
@@ -125,12 +154,14 @@ SQLAlchemy 模型位于同目录的 `models.py`，全部继承同一个 `Base`�
 | 子表 | 外键 | 删除行为 |
 | --- | --- | --- |
 | `sessions` | `user_id` → `users.id` | `CASCADE` |
+| `games` | `user_id` → `users.id` | `CASCADE` |
 | `conversations` | `user_id` → `users.id` | `CASCADE` |
+| `conversations` | `game_id` → `games.id` | `CASCADE` |
 | `conversation_entries` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `conversation_entries` | `parent_id` → `conversation_entries.id` | `CASCADE` |
-| `sandbox_sessions` | `conversation_id` → `conversations.id` | `CASCADE` |
+| `sandbox_sessions` | `game_id` → `games.id` | `CASCADE` |
 | `runs` | `conversation_id` → `conversations.id` | `CASCADE` |
 | `runs` | `user_id` → `users.id` | `CASCADE` |
 | `runs` | `parent_run_id` → `runs.id` | `SET NULL` |
 
-删除 conversation 会级联删除其 entries、sandbox 记录与 runs。删除 user 会级联删除其 sessions、conversations 与 runs。
+删除 conversation 会级联删除其 entries 与 runs；game 和沙盒记录保留。删除 game 会级联删除其 conversations、sandbox_sessions，并由应用删除 OSS 快照。

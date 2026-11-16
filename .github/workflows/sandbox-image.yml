@@ -1,0 +1,44 @@
+name: sandbox-image
+
+on:
+  push:
+    tags:
+      - "sandbox-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "镜像 tag"
+        required: true
+        default: "latest"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./sandbox
+          file: ./sandbox/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: |
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ai-game-platform-sandbox:${{ inputs.tag || github.ref_name }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ai-game-platform-sandbox:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

@@ -129,7 +129,7 @@ async def chat(
         raise conflict() from None
 
     try:
-        handle = await registry.ensure(conversation_id)
+        handle = await registry.ensure(conversation.game_id)
         stream = AgentRunStream(
             adapter=adapter,
             store=store,

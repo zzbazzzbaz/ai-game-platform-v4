@@ -28,8 +28,12 @@ async def get_owned(
     return row
 
 
-async def create(session: AsyncSession, user_id: uuid.UUID) -> Conversation:
-    row = Conversation(id=uuid.uuid7(), user_id=user_id, title="新会话", usage={})
+async def create(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    game_id: uuid.UUID,
+) -> Conversation:
+    row = Conversation(id=uuid.uuid7(), user_id=user_id, game_id=game_id, title="新会话", usage={})
     session.add(row)
     await session.commit()
     await session.refresh(row)

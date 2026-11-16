@@ -10,12 +10,14 @@ from app.dto.sandbox import FileListOut, PreviewOut, UploadOut
 from app.errors import (
     bad_gateway,
     bad_request,
+    conflict,
     not_found,
     payload_too_large,
     service_unavailable,
 )
 from app.runtime.sandboxes import errors as sandbox_errors
 from app.runtime.sandboxes import files as sandbox_files
+from app.runtime.sandboxes.errors import LockBusy, SandboxUnavailable
 from app.services import conversation_service
 
 logger = logging.getLogger(__name__)
@@ -27,9 +29,9 @@ async def _ensure_owned(
     conversation_id: uuid.UUID,
     user: CurrentUser,
     session: DbSession,
-) -> None:
+):
     try:
-        await conversation_service.get_owned(session, conversation_id, user.id)
+        return await conversation_service.get_owned(session, conversation_id, user.id)
     except conversation_service.ConversationNotFoundError as error:
         logger.warning(
             "沙箱接口拒绝访问：会话不存在，conversation_id=%s user_id=%s",
@@ -47,9 +49,9 @@ async def list_files(
     registry: RegistryDep,
     path: str | None = Query(default=None),
 ) -> FileListOut:
-    await _ensure_owned(conversation_id, user, session)
+    conversation = await _ensure_owned(conversation_id, user, session)
     try:
-        result = await sandbox_files.list_files(registry, conversation_id, path=path)
+        result = await sandbox_files.list_files(registry, conversation.game_id, path=path)
     except sandbox_errors.SandboxPathError as error:
         logger.warning(
             "列目录失败：路径超出工作目录，conversation_id=%s path=%r", conversation_id, path
@@ -71,9 +73,9 @@ async def read_file(
     registry: RegistryDep,
     path: str = Query(...),
 ) -> Response:
-    await _ensure_owned(conversation_id, user, session)
+    conversation = await _ensure_owned(conversation_id, user, session)
     try:
-        result = await sandbox_files.read_file(registry, conversation_id, path=path)
+        result = await sandbox_files.read_file(registry, conversation.game_id, path=path)
     except sandbox_errors.SandboxMissingError as error:
         logger.warning("读取文件失败：会话还没有沙箱，conversation_id=%s", conversation_id)
         raise not_found() from error
@@ -107,9 +109,9 @@ async def preview(
     session: DbSession,
     registry: RegistryDep,
 ) -> PreviewOut:
-    await _ensure_owned(conversation_id, user, session)
+    conversation = await _ensure_owned(conversation_id, user, session)
     try:
-        url = await sandbox_files.preview_url(registry, conversation_id, port=port)
+        url = await sandbox_files.preview_url(registry, conversation.game_id, port=port)
     except sandbox_errors.SandboxMissingError as error:
         logger.warning(
             "获取预览地址失败：会话还没有沙箱，conversation_id=%s port=%s", conversation_id, port
@@ -126,6 +128,23 @@ async def preview(
     return PreviewOut(url=url)
 
 
+@router.post("/conversations/{conversation_id}/sandbox/touch")
+async def touch_sandbox(
+    conversation_id: uuid.UUID,
+    user: CurrentUser,
+    session: DbSession,
+    registry: RegistryDep,
+) -> dict[str, str]:
+    conversation = await _ensure_owned(conversation_id, user, session)
+    try:
+        await registry.touch(conversation.game_id)
+    except SandboxUnavailable:
+        raise service_unavailable() from None
+    except LockBusy:
+        raise conflict() from None
+    return {"status": "ok"}
+
+
 @router.post(
     "/conversations/{conversation_id}/files",
     response_model=UploadOut,
@@ -139,12 +158,12 @@ async def upload_file(
     file: UploadFile = File(...),  # noqa: B008 - FastAPI 依赖必须写在参数默认值
     path: str | None = Form(default=None),
 ) -> UploadOut:
-    await _ensure_owned(conversation_id, user, session)
+    conversation = await _ensure_owned(conversation_id, user, session)
     data = await file.read(sandbox_files.MAX_FILE_BYTES + 1)
     try:
         return await sandbox_files.upload_file(
             registry,
-            conversation_id,
+            conversation.game_id,
             filename=file.filename,
             data=data,
             path=path,

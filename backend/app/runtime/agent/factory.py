@@ -7,6 +7,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai_harness.coder import Coder
 from pydantic_ai_harness.e2b_sandbox import E2BSandbox
 
+from app.config import settings
 from app.runtime.agent.capabilities.permissions import permissions
 from app.runtime.agent.capabilities.planning import planning
 from app.runtime.agent.deps import AgentDeps
@@ -40,6 +41,7 @@ class AgentFactory:
                     client=self._e2b_client,
                     template=self._template,
                     sandbox_timeout=self._sandbox_timeout,
+                    working_dir=settings.sandbox_workspace_dir,
                 ),
                 Coder(),
                 permissions(),

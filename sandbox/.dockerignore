@@ -1,0 +1,7 @@
+.git
+.gitignore
+**/node_modules
+**/.runtime
+**/dist
+**/__pycache__
+**/.DS_Store

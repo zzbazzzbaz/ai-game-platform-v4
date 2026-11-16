@@ -1,0 +1,26 @@
+{
+  "name": "aigame-game-template",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "AI 游戏平台 · 服务端游戏工程模板（平台维护文件禁止修改）",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "node scripts/build.mjs",
+    "start": "node server/index.js",
+    "db:migrate": "node db/migrate.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "pg": "^8.16.3",
+    "socket.io": "^4.8.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "phaser": "4.2.1",
+    "socket.io-client": "^4.8.3"
+  }
+}

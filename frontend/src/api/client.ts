@@ -82,4 +82,9 @@ export const api = {
       method: 'POST',
     }),
 
+  touchSandbox: (conversationId: string) =>
+    apiFetch<{ status: string }>(`/api/conversations/${conversationId}/sandbox/touch`, {
+      method: 'POST',
+    }),
+
 };

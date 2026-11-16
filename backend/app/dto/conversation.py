@@ -9,10 +9,16 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.dto.run import RunOut
 
 
+class ConversationCreate(BaseModel):
+    game_id: uuid.UUID | None = None
+    name: str = Field(default="新游戏", min_length=1, max_length=120)
+
+
 class ConversationOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    game_id: uuid.UUID
     title: str
     created_at: datetime
     updated_at: datetime
@@ -20,6 +26,7 @@ class ConversationOut(BaseModel):
 
 class ConversationDetailOut(BaseModel):
     id: uuid.UUID
+    game_id: uuid.UUID
     title: str
     created_at: datetime
     updated_at: datetime

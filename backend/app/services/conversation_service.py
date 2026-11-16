@@ -12,11 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dto.conversation import ConversationDetailOut
 from app.dto.run import RunOut
-from app.repositories import conversations, runs
+from app.repositories import conversations, games, runs
 from app.repositories.conversation_store import PostgresConversationStore
 from app.repositories.models import Conversation
 from app.runtime.runs.manager import RunManager
-from app.runtime.sandboxes.registry import SandboxRegistry
 
 _usage_adapter = TypeAdapter(RunUsage)
 _deferred_adapter = TypeAdapter(DeferredToolRequests)
@@ -30,16 +29,31 @@ class ConversationBusyError(Exception):
     """会话仍有运行中的回答。"""
 
 
-class SandboxCleanupError(Exception):
-    """删除会话时沙箱销毁失败。"""
+class GameNotFoundError(Exception):
+    """游戏不存在或不属于当前用户。"""
+
 
 
 async def list_conversations(session: AsyncSession, user_id: uuid.UUID) -> list[Conversation]:
     return await conversations.list_owned(session, user_id)
 
 
-async def create_conversation(session: AsyncSession, user_id: uuid.UUID) -> Conversation:
-    return await conversations.create(session, user_id)
+async def create_conversation(
+    session: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    game_id: uuid.UUID | None = None,
+    name: str = "新游戏",
+) -> Conversation:
+    if game_id is None:
+        game = await games.create(session, user_id=user_id, name=name)
+    else:
+        game = await games.get_owned(session, game_id, user_id)
+        if game is None:
+            raise GameNotFoundError
+    conversation = await conversations.create(session, user_id, game.id)
+    await games.ensure_sandbox_row(session, game.id)
+    return conversation
 
 
 async def apply_title(
@@ -95,6 +109,7 @@ async def get_detail(
     last_run = await runs.latest(session, conversation_id)
     return ConversationDetailOut(
         id=row.id,
+        game_id=row.game_id,
         title=row.title,
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -111,18 +126,10 @@ async def delete_conversation(
     conversation_id: uuid.UUID,
     user_id: uuid.UUID,
     store: PostgresConversationStore,
-    registry: SandboxRegistry,
     run_manager: RunManager,
 ) -> None:
     await get_owned(session, conversation_id, user_id)
     if run_manager.active(conversation_id) is not None:
         raise ConversationBusyError
-
-    handle = await registry.active_handle(conversation_id)
-    if handle is not None:
-        try:
-            await registry.kill_checked(handle.sandbox_id)
-        except Exception as error:  # 保留记录，交给下一次重试或回收
-            raise SandboxCleanupError from error
 
     await store.delete(str(conversation_id), scope=str(user_id))

@@ -24,7 +24,7 @@
 ## 2. 目录结构
 
 ```text
-pydantic-ai学习/
+ai-game-platform-v4/
 ├── .env
 ├── .env.example
 ├── .python-version
@@ -43,7 +43,8 @@ pydantic-ai学习/
 │   │   ├── env.py
 │   │   └── versions/
 │   │       ├── 0001_init.py
-│   │       └── 0002_simplify_sandbox_sessions.py
+│   │       ├── 0002_simplify_sandbox_sessions.py
+│   │       └── 0003_games_and_sandbox_snapshots.py
 │   ├── app/
 │   │   ├── main.py
 │   │   ├── lifespan.py
@@ -57,6 +58,7 @@ pydantic-ai学习/
 │   │   │   ├── auth.py
 │   │   │   ├── chat.py
 │   │   │   ├── conversation.py
+│   │   │   ├── game.py
 │   │   │   ├── run.py
 │   │   │   └── sandbox.py
 │   │   ├── endpoints/
@@ -64,6 +66,8 @@ pydantic-ai学习/
 │   │   │   ├── auth.py
 │   │   │   ├── chat.py
 │   │   │   ├── conversations.py
+│   │   │   ├── games.py
+│   │   │   ├── maintenance.py
 │   │   │   ├── runs.py
 │   │   │   └── sandbox.py
 │   │   ├── repositories/
@@ -72,6 +76,7 @@ pydantic-ai学习/
 │   │   │   ├── models.md
 │   │   │   ├── conversation_store.py
 │   │   │   ├── conversations.py
+│   │   │   ├── games.py
 │   │   │   ├── runs.py
 │   │   │   └── users.py
 │   │   ├── runtime/
@@ -95,16 +100,30 @@ pydantic-ai学习/
 │   │   │       ├── __init__.py
 │   │   │       ├── registry.py
 │   │   │       ├── files.py
-│   │   │       └── errors.py
+│   │   │       ├── errors.py
+│   │   │       ├── snapshots.py
+│   │   │       ├── locks.py
+│   │   │       ├── heartbeat.py
+│   │   │       └── scan.py
 │   │   └── services/
 │   │       ├── __init__.py
 │   │       ├── auth_service.py
 │   │       ├── conversation_service.py
 │   │       └── run_service.py
 │   └── scripts/
-│       ├── spike_local_agent.py
-│       ├── spike_aliyun_sandbox.py
-│       └── smoke_chat.py
+│       ├── create_template.py
+│       ├── refresh_oss_token.py
+│       ├── smoke_chat.py
+│       └── smoke_sandbox.py
+├── sandbox/
+│   ├── Dockerfile
+│   ├── start-services.sh
+│   ├── prepare-workspace.sh
+│   ├── browser-kiosk.sh
+│   ├── game-template/
+│   └── assets/skills/
+├── .github/workflows/
+│   └── sandbox-image.yml
 └── frontend/
     └── src/
 ```
@@ -114,7 +133,7 @@ pydantic-ai学习/
 | 层 | 目录 | 职责 |
 | --- | --- | --- |
 | 应用入口 | `app/main.py` | FastAPI 实例、CORS、路由挂载、健康检查 |
-| 生命周期 | `app/lifespan.py` | Logfire、运行时实例、遗留 run 清理 |
+| 生命周期 | `app/lifespan.py` | Logfire、运行时实例、遗留 run 清理、APScheduler 归档任务 |
 | 依赖 | `app/dependencies.py` | 当前用户、运行时实例与 FastAPI 依赖别名 |
 | 接入层 | `app/endpoints/` | HTTP 路由、SSE、请求解析、错误映射 |
 | 业务层 | `app/services/` | 认证、会话元数据、run 查询 |
@@ -263,20 +282,16 @@ agent = Agent(
 
 `sandbox_sessions` 保存 conversation 与沙箱实例的映射：
 
-| 字段 | 说明 |
-| --- | --- |
-| `id` | 记录 ID |
-| `conversation_id` | 所属会话，唯一 |
-| `sandbox_id` | 阿里云沙箱 ID |
-| `last_used_at` | 最近一次使用时间 |
+一个 game 对应一个工作区和一个沙盒；`sandbox_sessions.game_id` 唯一。`conversations.game_id` 关联 game，默认创建会话时自动创建 game。
 
 `SandboxRegistry` 实现在 `app/runtime/sandboxes/registry.py`。行为：
 
-1. 查询 `sandbox_sessions` 中该 conversation 的记录。
-2. 存在时更新 `last_used_at`，返回 `WorkspaceRef(provider='e2b', id=sandbox_id)`。
-3. 不存在时通过 `e2b.E2B` 客户端创建沙箱，写入 `sandbox_sessions`，再返回引用。
-4. 运行结束或复用时更新 `last_used_at`。
-5. 沙箱不可用时删除映射，下一次 run 重新创建。
+1. 查询 `sandbox_sessions` 中该 game 的记录。
+2. 存在且 `sandbox_id` 可连接时，`connect(timeout=600)` 续签并返回 `WorkspaceRef(provider='e2b', id=sandbox_id)`。
+3. 不存在或已归档时，创建新沙盒，并从 OSS 解包工作区。
+4. Agent run 和预览页各有 240 秒心跳。
+5. 沙盒自动暂停；暂停满 2 小时后由 APScheduler 归档到 OSS 并 kill。
+6. 归档/恢复按 game 使用 PostgreSQL advisory lock 串行化。
 
 `e2b.E2B` 客户端的连接参数来自环境变量：
 
@@ -287,14 +302,29 @@ agent = Agent(
 | Domain | `E2B_DOMAIN` |
 | Template | `E2B_TEMPLATE` |
 
-`E2B_TEMPLATE` 为空时使用阿里云默认模板。默认模板包含 Python 3.13、git、Node 20，不包含 `rg`；`Coder` 在缺少 `rg` 时使用 POSIX 搜索。
+沙盒内路径：
 
-预览与文件接口：
+| 路径 | 用途 |
+| --- | --- |
+| `/home/user/workspace` | 游戏工作区，归档对象 |
+| `/home/user/input` | 素材目录，不进入快照 |
+| `/opt/game-template` | 游戏模板与依赖 |
+| `/opt/skills` | Phaser 技能库 |
+| `3000` | 游戏 HTTP 服务 |
+| `9000` | noVNC 预览 |
+
+文件与预览接口：
 
 | 接口 | 行为 |
 | --- | --- |
-| `GET /api/conversations/{id}/sandbox/preview/{port}` | 调用沙箱 `get_host(port)`，返回可访问地址 |
-| `POST /api/conversations/{id}/files` | 将上传内容写入沙箱工作目录 |
+| `GET /api/conversations/{id}/sandbox/files` | 列出 game 工作区文件 |
+| `GET /api/conversations/{id}/sandbox/file` | 读取 game 工作区文件 |
+| `POST /api/conversations/{id}/sandbox/preview/{port}` | 启动游戏服务并返回预览地址 |
+| `POST /api/conversations/{id}/sandbox/touch` | 预览页心跳，续签 600 秒 |
+| `POST /api/games/{id}/archive` | 手动归档（`force=true` 会先暂停） |
+| `POST /api/games/{id}/open` | 创建/恢复沙盒并启动游戏服务 |
+
+完整生命周期见 `docs/sandbox-lifecycle.md`。
 
 ## 7. 流式输出与历史
 
@@ -391,10 +421,22 @@ HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包�
 | `E2B_API_KEY` | 阿里云 Agent Sandbox API Key |
 | `E2B_API_URL` | `https://api.<region>.sandbox.aliyuncs.com` |
 | `E2B_DOMAIN` | `<region>.sandbox.aliyuncs.com` |
-| `E2B_TEMPLATE` | 沙箱模板名称；为空时使用默认模板 |
+| `E2B_TEMPLATE` | 沙箱模板 ID；为空时使用默认模板 |
+| `FCSANDBOX_TEAM_ID` | 阿里云 Agent Sandbox Team ID |
+| `ALIYUN_REGION` | 阿里云地域，`.env` 中为 `cn-hangzhou` |
 | `LOGFIRE_TOKEN` | Logfire 写入 Token，可为空 |
 | `LOGFIRE_ENVIRONMENT` | Logfire 环境名，`.env` 中为 `development` |
 | `SANDBOX_TIMEOUT` | 沙箱生命周期与续签秒数，`.env` 中为 `600` |
+| `SANDBOX_HEARTBEAT_SECONDS` | Agent run 心跳间隔，`.env` 中为 `240` |
+| `SANDBOX_ARCHIVE_AFTER_SECONDS` | 暂停后归档阈值，`.env` 中为 `7200` |
+| `SANDBOX_ARCHIVE_SCAN_SECONDS` | 归档扫描间隔，`.env` 中为 `300` |
+| `SANDBOX_WORKSPACE_DIR` | 沙盒工作区，`.env` 中为 `/home/user/workspace` |
+| `SANDBOX_GAME_PORT` | 游戏服务端口，`.env` 中为 `3000` |
+| `SANDBOX_NOVNC_PORT` | noVNC 端口，`.env` 中为 `9000` |
+| `OSS_ENDPOINT` | OSS Endpoint |
+| `OSS_BUCKET` | OSS Bucket，`.env` 中为 `ai-game-platform-oss` |
+| `OSS_PREFIX` | OSS 前缀，`.env` 中为 `ai-game-platform` |
+| `OSS_PROXY` | 本机访问 OSS 的代理，生产留空 |
 
 ## 11. 启动
 

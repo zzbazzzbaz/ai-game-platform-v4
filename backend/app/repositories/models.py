@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import (
+    BigInteger,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -52,12 +53,35 @@ class Session(Base):
     )
 
 
+class Game(Base):
+    __tablename__ = "games"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    __table_args__ = (Index("games_user_updated_idx", "user_id", text("updated_at DESC")),)
+
+
 class Conversation(Base):
     __tablename__ = "conversations"
 
     id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
     user_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("games.id", ondelete="CASCADE"), nullable=False
     )
     title: Mapped[str] = mapped_column(Text, nullable=False, server_default="新会话")
     head_id: Mapped[uuid.UUID | None] = mapped_column(PGUUID(as_uuid=True), nullable=True)
@@ -66,7 +90,10 @@ class Conversation(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
-    __table_args__ = (Index("conversations_user_updated_idx", "user_id", text("updated_at DESC")),)
+    __table_args__ = (
+        Index("conversations_user_updated_idx", "user_id", text("updated_at DESC")),
+        Index("conversations_game_idx", "game_id"),
+    )
 
 
 class ConversationEntryRow(Base):
@@ -94,15 +121,38 @@ class SandboxSession(Base):
     id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()")
     )
-    conversation_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False
+    game_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("games.id", ondelete="CASCADE"),
+        nullable=False,
     )
-    sandbox_id: Mapped[str] = mapped_column(Text, nullable=False)
-    last_used_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    sandbox_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lifecycle_state: Mapped[str] = mapped_column(Text, nullable=False, server_default="active")
+    snapshot_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    snapshot_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    snapshot_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    snapshot_sha256: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_used_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    archive_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    archive_attempts: Mapped[int] = mapped_column(nullable=False, server_default="0")
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
     __table_args__ = (
-        Index("sandbox_sessions_conversation_idx", "conversation_id", unique=True),
+        CheckConstraint(
+            "lifecycle_state IN ('active', 'archiving', 'archived', 'restoring')",
+            name="sandbox_sessions_state_check",
+        ),
+        Index("sandbox_sessions_game_idx", "game_id", unique=True),
         Index("sandbox_sessions_last_used_idx", "last_used_at"),
+        Index("sandbox_sessions_retry_idx", "archive_retry_at"),
     )
 
 

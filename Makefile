@@ -1,4 +1,4 @@
-.PHONY: up down install migrate run-api run-ui dev check build smoke test
+.PHONY: up down install migrate run-api run-ui dev check build build-image push-image template smoke agent-smoke
 
 up:
 	docker compose up -d --wait
@@ -25,3 +25,23 @@ dev:
 
 build:
 	cd frontend && npm run build
+
+check:
+	cd backend && uv run ruff check
+	cd backend && uv run ty check
+	cd frontend && npm run typecheck
+
+build-image:
+	docker buildx build --platform linux/amd64 -f sandbox/Dockerfile -t $${DOCKER_IMAGE:-ai-game-platform-sandbox:local} sandbox
+
+push-image:
+	docker buildx build --platform linux/amd64 --push -f sandbox/Dockerfile -t $${DOCKER_IMAGE:?set DOCKER_IMAGE} sandbox
+
+template:
+	cd backend && uv run python scripts/create_template.py
+
+smoke:
+	cd backend && uv run python scripts/smoke_sandbox.py
+
+agent-smoke:
+	cd backend && uv run python scripts/smoke_chat.py

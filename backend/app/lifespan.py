@@ -3,8 +3,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 import logfire
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
 
 from app.config import settings
@@ -15,6 +17,8 @@ from app.runtime.agent.model import build_model
 from app.runtime.runs.lifecycle import fail_stale_runs
 from app.runtime.runs.manager import RunManager
 from app.runtime.sandboxes.registry import SandboxRegistry, create_e2b_client
+from app.runtime.sandboxes.scan import run_archive_scan
+from app.runtime.sandboxes.snapshots import SnapshotStore
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +38,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     logfire.instrument_pydantic_ai()
 
     e2b_client = create_e2b_client()
+    snapshots = SnapshotStore()
     store = PostgresConversationStore(session_factory)
-    registry = SandboxRegistry(e2b_client, session_factory)
+    registry = SandboxRegistry(e2b_client, snapshots, session_factory)
     run_manager = RunManager(session_factory)
     agent_factory = AgentFactory(
         build_model(),
@@ -45,6 +50,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     )
 
     app.state.store = store
+    app.state.snapshots = snapshots
     app.state.sandbox_registry = registry
     app.state.run_manager = run_manager
     app.state.agent_factory = agent_factory
@@ -53,7 +59,24 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     if stale:
         logger.info("已标记 %s 条遗留的 running 记录为 failed", stale)
 
+    scheduler = AsyncIOScheduler(timezone="UTC")
+    scheduler.add_job(
+        run_archive_scan,
+        "interval",
+        seconds=settings.sandbox_archive_scan_seconds,
+        args=[registry],
+        id="sandbox-archive",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=60,
+        replace_existing=True,
+        next_run_time=datetime.now(UTC),
+    )
+    scheduler.start()
+    logger.info("沙箱归档任务已启动，间隔 %s 秒", settings.sandbox_archive_scan_seconds)
+
     try:
         yield
     finally:
+        scheduler.shutdown(wait=False)
         await dispose_engine()

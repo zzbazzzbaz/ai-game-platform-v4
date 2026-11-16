@@ -8,12 +8,15 @@ from fastapi import APIRouter, status
 from app.dependencies import (
     CurrentUser,
     DbSession,
-    RegistryDep,
     RunManagerDep,
     StoreDep,
 )
-from app.dto.conversation import ConversationDetailOut, ConversationOut
-from app.errors import conflict, not_found, service_unavailable
+from app.dto.conversation import (
+    ConversationCreate,
+    ConversationDetailOut,
+    ConversationOut,
+)
+from app.errors import conflict, not_found
 from app.services import conversation_service
 
 logger = logging.getLogger(__name__)
@@ -34,8 +37,19 @@ async def list_conversations(
 async def create_conversation(
     user: CurrentUser,
     session: DbSession,
+    payload: ConversationCreate | None = None,
 ) -> ConversationOut:
-    row = await conversation_service.create_conversation(session, user.id)
+    payload = payload or ConversationCreate()
+    try:
+        row = await conversation_service.create_conversation(
+            session,
+            user.id,
+            game_id=payload.game_id,
+            name=payload.name,
+        )
+    except conversation_service.GameNotFoundError as error:
+        logger.warning("创建会话失败：游戏不存在，game_id=%s", payload.game_id)
+        raise not_found() from error
     return ConversationOut.model_validate(row)
 
 
@@ -66,7 +80,6 @@ async def delete_conversation(
     user: CurrentUser,
     session: DbSession,
     store: StoreDep,
-    registry: RegistryDep,
     run_manager: RunManagerDep,
 ) -> None:
     try:
@@ -75,7 +88,6 @@ async def delete_conversation(
             conversation_id=conversation_id,
             user_id=user.id,
             store=store,
-            registry=registry,
             run_manager=run_manager,
         )
     except conversation_service.ConversationNotFoundError as error:
@@ -90,8 +102,3 @@ async def delete_conversation(
             user.id,
         )
         raise conflict() from error
-    except conversation_service.SandboxCleanupError as error:
-        logger.warning(
-            "删除会话失败：沙箱销毁失败，conversation_id=%s error=%s", conversation_id, error
-        )
-        raise service_unavailable() from error

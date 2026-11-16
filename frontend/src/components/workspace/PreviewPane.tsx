@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ExternalLink, Globe, Loader2 } from 'lucide-react';
 import { api } from '@/api/client';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,14 @@ export function PreviewPane({ conversationId }: { conversationId: string }) {
 
   const portNumber = Number(port);
   const validPort = Number.isInteger(portNumber) && portNumber >= 1 && portNumber <= 65535;
+
+  useEffect(() => {
+    if (!url) return;
+    const timer = window.setInterval(() => {
+      void api.touchSandbox(conversationId).catch(() => undefined);
+    }, 240_000);
+    return () => window.clearInterval(timer);
+  }, [conversationId, url]);
 
   const open = async () => {
     if (!validPort) {
