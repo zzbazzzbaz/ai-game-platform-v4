@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -9,7 +8,6 @@ from datetime import UTC, datetime
 import logfire
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from fastapi import FastAPI
-from pydantic_ai.models import infer_model
 
 from app.config import settings
 from app.database import dispose_engine, session_factory
@@ -17,6 +15,7 @@ from app.job.reaper import SCAN_INTERVAL_SECONDS, run_reaper
 from app.repositories.conversation_store import PostgresConversationStore
 from app.services import run_service
 from app.services.agent.factory import AgentFactory
+from app.services.agent.model import build_model
 from app.services.run_manager import RunManager
 from app.services.sandbox_registry import SandboxRegistry, create_e2b_client
 
@@ -25,9 +24,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    if settings.deepseek_api_key:
-        os.environ["DEEPSEEK_API_KEY"] = settings.deepseek_api_key
-
     if settings.logfire_token:
         logfire.configure(token=settings.logfire_token)
     else:
@@ -39,7 +35,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     registry = SandboxRegistry(e2b_client, session_factory)
     run_manager = RunManager(session_factory)
     agent_factory = AgentFactory(
-        infer_model(settings.model),
+        build_model(),
         e2b_client=e2b_client,
         template=settings.e2b_template or None,
         sandbox_timeout=settings.sandbox_timeout,

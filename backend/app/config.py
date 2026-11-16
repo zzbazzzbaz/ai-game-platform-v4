@@ -16,6 +16,7 @@ class Settings(BaseSettings):
 
     model: str
     deepseek_api_key: str
+    deepseek_base_url: str
 
     database_url: str
 

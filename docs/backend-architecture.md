@@ -84,6 +84,7 @@ pydantic-ai学习/
 │   │       └── agent/
 │   │           ├── __init__.py
 │   │           ├── factory.py
+│   │           ├── model.py
 │   │           ├── deps.py
 │   │           ├── instructions.py
 │   │           └── capabilities/
@@ -184,7 +185,7 @@ sequenceDiagram
 
 ## 5. Agent 组装
 
-`AgentFactory` 在每次 run 前构建 Agent，使用进程级模型实例和当前 conversation 的依赖。
+`AgentFactory` 在每次 run 前构建 Agent，使用进程级模型实例和当前 conversation 的依赖。模型由 `app/services/agent/model.py` 的 `build_model()` 构建：`ConfiguredDeepSeekProvider` 显式传入 `DEEPSEEK_API_KEY` 和 `DEEPSEEK_BASE_URL`，不再依赖进程环境变量。
 
 | Capability | 作用 |
 | --- | --- |
@@ -367,6 +368,7 @@ HTTP 错误统一由 `app/errors.py` 的无参工厂函数生成。响应只包�
 | --- | --- |
 | `MODEL` | 模型字符串，值为 `deepseek:deepseek-flash` |
 | `DEEPSEEK_API_KEY` | DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | DeepSeek API Base URL，`https://api.deepseek.com` |
 | `DATABASE_URL` | `postgresql+asyncpg://agent:agent@localhost:5432/agent` |
 | `SESSION_SECRET` | 会话 Cookie 签名密钥 |
 | `SESSION_COOKIE` | 会话 Cookie 名称，`.env` 中为 `agent_session` |
