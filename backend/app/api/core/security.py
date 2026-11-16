@@ -7,7 +7,7 @@ import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
 
-from app.config import settings
+from app.shared.config import settings
 
 _hasher = PasswordHasher()
 

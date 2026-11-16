@@ -7,9 +7,9 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.config import settings
-from app.models import Run, SandboxSession
-from app.runtime.sandboxes import SandboxRegistry
+from app.api.repositories.models import Run, SandboxSession
+from app.api.services.sandbox_registry import SandboxRegistry
+from app.shared.config import settings
 
 logger = logging.getLogger(__name__)
 

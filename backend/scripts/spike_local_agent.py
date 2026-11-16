@@ -15,7 +15,7 @@ from pydantic_ai.capabilities import LocalWorkspace
 from pydantic_ai.models import infer_model
 from pydantic_ai_harness.coder import Coder
 
-from app.config import settings
+from app.shared.config import settings
 
 
 async def main() -> None:

@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import NullPool
 
-from app.config import settings
+from app.shared.config import settings
 
 engine: AsyncEngine = create_async_engine(settings.database_url, pool_size=10, max_overflow=10, pool_pre_ping=True)
 

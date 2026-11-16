@@ -8,8 +8,8 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from app.config import settings
-from app.models import Base
+from app.api.repositories.models import Base
+from app.shared.config import settings
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 from typing import Any
 
 from pydantic import TypeAdapter
-from pydantic_ai import Conversation
 from pydantic_ai.conversation_store import (
     ConversationConflict,
     ConversationEntry,
@@ -21,8 +20,8 @@ from sqlalchemy import delete, literal_column, null, select, text, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.models import Conversation as ConversationRow
-from app.models import ConversationEntryRow
+from app.api.repositories.models import Conversation as ConversationRow
+from app.api.repositories.models import ConversationEntryRow
 
 _usage_adapter = TypeAdapter(RunUsage)
 _deferred_adapter = TypeAdapter(DeferredToolRequests)

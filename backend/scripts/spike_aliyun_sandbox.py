@@ -8,8 +8,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.config import settings
-from app.runtime.sandboxes import create_e2b_client
+from app.api.services.sandbox_registry import create_e2b_client
+from app.shared.config import settings
 
 
 async def main() -> None:

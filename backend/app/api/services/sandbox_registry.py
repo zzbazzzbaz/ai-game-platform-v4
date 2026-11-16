@@ -11,8 +11,8 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.config import settings
-from app.models import SandboxSession
+from app.api.repositories.models import SandboxSession
+from app.shared.config import settings
 
 
 class SandboxUnavailable(RuntimeError):

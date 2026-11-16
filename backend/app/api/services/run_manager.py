@@ -14,8 +14,8 @@ from pydantic_ai.usage import RunUsage
 from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, async_sessionmaker
 
-from app.db import lock_engine
-from app.models import Run
+from app.api.core.database import lock_engine
+from app.api.repositories.models import Run
 
 logger = logging.getLogger(__name__)
 

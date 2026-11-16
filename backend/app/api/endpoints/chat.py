@@ -3,61 +3,36 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Request
 from pydantic import TypeAdapter, ValidationError
-from pydantic_ai import AgentRunResult, Conversation as AgentConversation
+from pydantic_ai import AgentRunResult
 from pydantic_ai.exceptions import RunCancelled, UserError
-from pydantic_ai.tools import DeferredToolResults
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 from pydantic_ai.usage import RunUsage
-from pydantic_ai.workspaces import WorkspaceUnavailableError
-from sqlalchemy import select
 from starlette.background import BackgroundTask
 
 from app.agent.deps import AgentDeps
-from app.config import settings
-from app.endpoint.deps import (
+from app.api.dependencies import (
     AgentFactoryDep,
     CurrentUser,
     DbSession,
     RegistryDep,
     RunManagerDep,
     StoreDep,
-    owned_conversation,
 )
-from app.models import Conversation, Run
-from app.runtime.runs import RunBusy
-from app.runtime.sandboxes import SandboxUnavailable
+from app.api.services import chat_service, conversation_service
+from app.api.services.run_manager import RunBusy
+from app.api.services.sandbox_registry import SandboxUnavailable
+from app.shared.config import settings
+from app.shared.dto.chat import CancelRunOut
+from app.shared.errors import bad_request, conflict, not_found, service_unavailable
 
 logger = logging.getLogger(__name__)
 _usage_adapter = TypeAdapter(RunUsage)
 
-router = APIRouter(tags=["chat"])
-
-
-def _workspace_unavailable(error: BaseException) -> bool:
-    current: BaseException | None = error
-    while current is not None:
-        if isinstance(current, WorkspaceUnavailableError):
-            return True
-        current = current.__cause__
-    return False
-
-
-def _first_user_text(body: dict[str, Any]) -> str | None:
-    messages = body.get("messages")
-    if not isinstance(messages, list):
-        return None
-    for message in reversed(messages):
-        if not isinstance(message, dict) or message.get("role") != "user":
-            continue
-        for part in message.get("parts") or []:
-            if isinstance(part, dict) and part.get("type") == "text" and part.get("text"):
-                return str(part["text"]).strip()
-    return None
+router = APIRouter(tags=["对话"])
 
 
 @router.post("/chat")
@@ -73,17 +48,18 @@ async def chat(
     try:
         body = await request.json()
     except ValueError:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="请求体不是合法 JSON") from None
+        raise bad_request("请求体不是合法 JSON") from None
 
     conversation_id_raw = body.get("id") if isinstance(body, dict) else None
     try:
         conversation_id = uuid.UUID(str(conversation_id_raw))
     except (ValueError, TypeError):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="缺少合法的 conversation id"
-        ) from None
+        raise bad_request("缺少合法的 conversation id") from None
 
-    conversation = await owned_conversation(conversation_id, user, session)
+    try:
+        conversation = await conversation_service.get_owned(session, conversation_id, user.id)
+    except conversation_service.ConversationNotFoundError as error:
+        raise not_found("会话不存在") from error
 
     agent = agent_factory.build()
     try:
@@ -95,30 +71,20 @@ async def chat(
             conversation_scope=str(user.id),
         )
     except (ValidationError, UserError) as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="消息格式不合法"
-        ) from error
+        raise bad_request("消息格式不合法") from error
 
     try:
         deferred_results = adapter.deferred_tool_results
     except UserError as error:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(error)
-        ) from error
-    if deferred_results is not None:
-        pending = await store.load(str(conversation_id), scope=str(user.id))
-        metadata = (pending.deferred_tool_requests.metadata if pending and pending.deferred_tool_requests else {})
-        deferred_results = DeferredToolResults(
-            approvals=deferred_results.approvals,
-            metadata={**metadata, **deferred_results.metadata},
-            answered_by={tool_call_id: str(user.id) for tool_call_id in deferred_results.approvals},
-        )
+        raise bad_request(str(error)) from error
+    deferred_results = await chat_service.normalize_deferred_results(
+        store,
+        conversation_id=conversation_id,
+        scope=user.id,
+        deferred_results=deferred_results,
+    )
 
-    title_text = _first_user_text(body)
-    if title_text and conversation.title == "新会话":
-        conversation.title = title_text[:40]
-        conversation.updated_at = datetime.now(UTC)
-        await session.commit()
+    await chat_service.apply_title(session, conversation, chat_service.first_user_text(body))
 
     usage_baseline = _usage_adapter.validate_python(conversation.usage or {})
     try:
@@ -130,22 +96,15 @@ async def chat(
             usage_baseline=usage_baseline,
         )
     except RunBusy:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="该会话正在运行，请等待当前回答结束"
-        ) from None
+        raise conflict("该会话正在运行，请等待当前回答结束") from None
 
     async def save_cancelled(cancelled: RunCancelled) -> None:
-        try:
-            loaded = await store.load(str(conversation_id), scope=str(user.id))
-            cancelled_conversation = AgentConversation(
-                messages=list(cancelled.all_messages()),
-                usage=cancelled.usage,
-                conversation_id=str(conversation_id),
-                revision=loaded.revision if loaded is not None else None,
-            )
-            await store.save(cancelled_conversation, scope=str(user.id))
-        except Exception:  # noqa: BLE001 - 取消时保存失败不应吞掉取消本身
-            logger.exception("保存取消时的会话失败")
+        await chat_service.save_cancelled(
+            store,
+            conversation_id=conversation_id,
+            scope=user.id,
+            cancelled=cancelled,
+        )
 
     async def finalize() -> None:
         try:
@@ -197,7 +156,7 @@ async def chat(
                 raise
             except BaseException as error:  # noqa: BLE001 - 记录后交给运行记录
                 active.error = error
-                if _workspace_unavailable(error):
+                if chat_service.workspace_unavailable(error):
                     await registry.mark_dead(handle.sandbox_id)
                 raise
             finally:
@@ -213,37 +172,28 @@ async def chat(
     except SandboxUnavailable as error:
         active.error = error
         await run_manager.finish(active)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)
-        ) from error
+        raise service_unavailable(str(error)) from error
     except BaseException:
         await run_manager.finish(active)
         raise
 
 
-@router.post("/conversations/{conversation_id}/cancel")
+@router.post(
+    "/conversations/{conversation_id}/cancel",
+    response_model=CancelRunOut,
+)
 async def cancel_run(
     conversation_id: uuid.UUID,
     user: CurrentUser,
     session: DbSession,
     run_manager: RunManagerDep,
-) -> dict[str, str]:
-    conversation = await owned_conversation(conversation_id, user, session)
+) -> CancelRunOut:
+    try:
+        conversation = await conversation_service.get_owned(session, conversation_id, user.id)
+    except conversation_service.ConversationNotFoundError as error:
+        raise not_found("会话不存在") from error
 
-    run_id = await run_manager.cancel(conversation_id)
-    if run_id is not None:
-        return {"run_id": str(run_id)}
-
-    waiting = await session.scalar(
-        select(Run)
-        .where(Run.conversation_id == conversation_id, Run.status == "waiting_approval")
-        .order_by(Run.started_at.desc())
-        .limit(1)
-    )
-    if waiting is None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前没有运行中的回答")
-    waiting.status = "cancelled"
-    waiting.finished_at = datetime.now(UTC)
-    conversation.deferred_tool_requests = None
-    await session.commit()
-    return {"run_id": str(waiting.id)}
+    run_id = await chat_service.cancel_waiting(session, conversation, run_manager)
+    if run_id is None:
+        raise conflict("当前没有运行中的回答")
+    return CancelRunOut(run_id=run_id)

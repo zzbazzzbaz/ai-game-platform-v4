@@ -14,6 +14,8 @@
 
 `docker-compose.yml` 中的数据库镜像为 `postgres:17.11`。
 
+SQLAlchemy 模型与列的对应关系见 `docs/models.md`。
+
 ## 2. ER 图
 
 ```mermaid
